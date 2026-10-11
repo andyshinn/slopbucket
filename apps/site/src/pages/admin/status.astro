@@ -11,6 +11,7 @@ import {
   type ReclassifyPreview,
   backfillEstimate,
   classifyProgress,
+  etaMinutesFor,
   operations,
   postCounts,
   reclassifyPreview,
@@ -91,8 +92,10 @@ const [statuses, counts, progress, ops, trending] = await Promise.all([
 ]);
 // Below one a minute, keep a decimal so a slow rate does not read as "~0".
 const rate = (perMinute: number) => (perMinute < 1 ? perMinute.toFixed(1) : String(Math.round(perMinute)));
-const eta = (remaining: number) =>
-  remaining > 0 && progress.perMinute > 0 ? `${aboutDuration(remaining / progress.perMinute)} left` : undefined;
+const eta = (remaining: number) => {
+  const minutes = etaMinutesFor(remaining, progress);
+  return minutes === null ? undefined : `${aboutDuration(minutes)} left`;
+};
 const countRows = [
   ["pending", "Waiting to classify"],
   ["queued", "Waiting for review"],
@@ -170,7 +173,7 @@ const sourceLabel = (s: string) => (s === "all" ? "all sources" : (SOURCE_LABELS
                 <p class="font-semibold">Classifying</p>
                 <p class="mt-0.5 text-sm text-stone-600">
                   {progress.pending.toLocaleString()} waiting
-                  {progress.perMinute > 0 && ` · ~${rate(progress.perMinute)} a minute`}
+                  {progress.reliable && ` · ~${rate(progress.perMinute)} a minute`}
                   {progress.etaMinutes !== null && ` · ${aboutDuration(progress.etaMinutes)} left`}
                 </p>
                 {progress.stalled && (

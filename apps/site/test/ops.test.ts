@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   backfillEstimate,
   classifyProgress,
+  etaMinutesFor,
   operations,
   postCounts,
   reclassifyPreview,
@@ -178,12 +179,40 @@ describe("progress", () => {
 
   it("reports the classification rate, an ETA and a stall", async () => {
     await db.batch([
-      ...Array.from({ length: 30 }, () => post("queued", at(-60), at(-5))),
+      // Two a minute, steadily, across the whole 15-minute window.
+      ...Array.from({ length: 30 }, (_, i) => post("queued", at(-60), at(-15 + i / 2))),
       ...Array.from({ length: 60 }, () => post("pending", at(-60))),
     ]);
-    expect(await classifyProgress(db, T0)).toEqual({ pending: 60, perMinute: 2, etaMinutes: 30, stalled: false });
+    expect(await classifyProgress(db, T0)).toEqual({ pending: 60, perMinute: 2, reliable: true, etaMinutes: 30, stalled: false });
     // An hour later nothing has moved: stalled, no ETA.
     expect(await classifyProgress(db, T0 + 60 * 60_000)).toMatchObject({ pending: 60, perMinute: 0, etaMinutes: null, stalled: true });
+  });
+
+  it("measures a run that just started from its first classification, not the idle window", async () => {
+    await db.batch([
+      // Classifying began two minutes ago after a long idle spell: six done since.
+      ...Array.from({ length: 6 }, (_, i) => post("queued", at(-60), at(-2 + i / 3))),
+      ...Array.from({ length: 300 }, () => post("pending", at(-60))),
+    ]);
+    expect(await classifyProgress(db, T0)).toMatchObject({ pending: 300, perMinute: 3, etaMinutes: 100 });
+  });
+
+  it("gives no ETA from fewer than three classifications", async () => {
+    await db.batch([post("queued", at(-60), at(-0.5)), post("queued", at(-60), at(-0.25)), post("pending", at(-60))]);
+    expect(await classifyProgress(db, T0)).toMatchObject({ pending: 1, perMinute: 2, reliable: false, etaMinutes: null, stalled: false });
+  });
+
+  it("gives an ETA from exactly three, and floors the measuring time at a minute", async () => {
+    // Three done in the last few seconds: 3 a minute, not hundreds.
+    await db.batch([...[-0.1, -0.05, -0.01].map((m) => post("queued", at(-60), at(m))), ...Array.from({ length: 30 }, () => post("pending", at(-60)))]);
+    expect(await classifyProgress(db, T0)).toMatchObject({ pending: 30, perMinute: 3, reliable: true, etaMinutes: 10 });
+  });
+
+  it("estimates any remaining count with the same rule", () => {
+    expect(etaMinutesFor(30, { perMinute: 3, reliable: true })).toBe(10);
+    expect(etaMinutesFor(30, { perMinute: 3, reliable: false })).toBeNull();
+    expect(etaMinutesFor(0, { perMinute: 3, reliable: true })).toBeNull();
+    expect(etaMinutesFor(30, { perMinute: 0, reliable: true })).toBeNull();
   });
 
   it("does not count a re-classified post as throughput", async () => {
