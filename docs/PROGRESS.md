@@ -2,7 +2,7 @@
 
 Where Slop Bucket stands, so a new session can pick up without the chat history. Update this file in each PR that moves the launch plan, changes what's next, or resolves an open issue.
 
-**Last updated:** 2026-10-11 (public site step 2: trending list, avatars, edge cache)
+**Last updated:** 2026-10-11 (public site step 3: filters, search, /new, categories)
 
 ## Resuming in a new session
 
@@ -32,7 +32,7 @@ Built outside the plan's step list, all needed before launch: the daily trending
 3. **Review the queue** as it fills. Use Tools → Merge for duplicate tools. Mark good decisions as few-shot examples.
 4. **Build while the backfill runs:**
    - ~~Queue page improvements~~: done (Resolves to box, tag chips, reason quote, lime Approve).
-   - **The public site**, following the handoff's suggested build order. Steps 1 (tokens, layout, theme, `/about`) and 2 (home trending list, rows, `/avatar/[owner]`, 5-minute edge cache) are done. **Next: step 3**, the filter sidebar, `/search` with URL state, the Sort select, the phone filter dialog, `/new` and `/category/[name]`. Then tool pages. Merge redirects (301 from a merged tool's slug) are part of the tool page.
+   - **The public site**, following the handoff's suggested build order. Steps 1 (tokens, layout, theme, `/about`), 2 (home trending list, rows, `/avatar/[owner]`, 5-minute edge cache) and 3 (filters with faceted counts, sort, `/search`, `/new`, `/category/[name]`, the phone filter dialog) are done. **Next: step 4**, the tool page and the report dialog, with merge redirects. Merge redirects (301 from a merged tool's slug) are part of the tool page.
    - **Reports page** (admin); only matters once the public site is up.
 5. **Step 7 tuning** against the backfilled data, then **step 8**: lower `review_threshold`, re-classify unreviewed posts so confident ones auto-publish, and go public.
 
@@ -41,7 +41,7 @@ Built outside the plan's step list, all needed before launch: the daily trending
 - **Trending cron didn't run on Oct 9.** `source_runs` has only the manual trending run from Oct 8 20:49 UTC, and nothing from the 07:00 UTC cron on Oct 9, although the 06:00 fetch ran. Check tomorrow's 07:00 run on `sb-ingest`; if it's missing again, check the deployed cron triggers and the ingest logs.
 - **Rename cleanup failed.** The `rename.yml` "cleanup" run on Oct 9 23:55 failed with R2 429 (rate limited) while deleting `radar-articles` objects. Re-run cleanup; already-deleted objects return 404, which the script ignores. Afterwards, delete `rename.yml` and `.github/scripts/copy-data.mjs`.
 - **Unmerged commit:** `649a841` ("Attach slopbucket.app in the dashboard instead of wrangler routes") sits on `rename-slop-bucket` after #17 merged. Decide whether it's still wanted.
-- **Links ahead of their pages:** the header links to `/new`, `/category/[name]` and `/search` (step 3); rows link to `/tag/[slug]` (step 7) and `/tools/[slug]` (step 4). They 404 until then.
+- **Links ahead of their pages:** rows link to `/tools/[slug]` (step 4) and `/tag/[slug]`, which 404 until they exist. `/tag/[slug]` could simply redirect to `/?tag=slug`.
 - **Re-classify operation never marked finished:** operation 1 has `finished_at` NULL, because finishing is written lazily when the Status page loads. It should close on the next Status view. If it doesn't, check `reclassifyProgress`.
 
 ## Production snapshot (2026-10-09)

@@ -1,3 +1,5 @@
+import { SORTS, filterParams, parseFilters } from "./browse.ts";
+
 // Edge caching for public pages with the Workers Cache API. Workers run in
 // front of Cloudflare's cache, so a page is only cached if the Worker puts it
 // there. Pages change once a day (after the daily run), so a short TTL keeps
@@ -6,12 +8,6 @@
 /** Seconds a public page stays in the edge cache. */
 export const PAGE_TTL = 300;
 
-/**
- * Query parameters that change what a public page shows. Everything else
- * (utm_*, typos) is dropped from the cache key, so it can't create extra cache
- * entries or D1 reads. A page that reads a new parameter must add it here.
- */
-export const PAGE_PARAMS = ["page"];
 
 /** GET requests for public HTML pages; never /admin or /api, and not /avatar, which caches itself. */
 export function isCacheablePath(method: string, pathname: string): boolean {
@@ -19,10 +15,19 @@ export function isCacheablePath(method: string, pathname: string): boolean {
   return !/^\/(admin|api|avatar)(\/|$)/.test(pathname);
 }
 
-/** The cache key for a page: its path plus the PAGE_PARAMS it was given, sorted. */
+/**
+ * The cache key for a page: its path plus the filters as parseFilters reads
+ * them, written back in one canonical form. Unknown parameters (utm_*), bad
+ * values and reorderings of the same filters share one entry, and the key
+ * can't drift from what pages actually read.
+ */
 export function pageCacheKey(url: URL): Request {
-  const params = new URLSearchParams();
-  for (const name of PAGE_PARAMS) for (const value of url.searchParams.getAll(name)) params.append(name, value);
+  const params = filterParams(parseFilters(url.searchParams), "trending");
+  // Pages differ in their default sort (/new is newest), so the key keeps the
+  // sort exactly as asked for, when it is a valid one.
+  params.delete("sort");
+  const sort = url.searchParams.get("sort");
+  if (sort && Object.hasOwn(SORTS, sort)) params.set("sort", sort);
   params.sort();
   const query = params.toString();
   return new Request(`${url.origin}${url.pathname}${query ? `?${query}` : ""}`);

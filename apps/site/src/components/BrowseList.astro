@@ -1,0 +1,198 @@
+---
+import type { TagGroups } from "@slop-bucket/core";
+import { type BrowseResult, type Filters, SORTS, type Sort, activeChips, browseHref, filterParams } from "../lib/browse.ts";
+import { categoryStyle } from "../lib/categories.ts";
+import { PAGE_SIZE } from "../lib/public.ts";
+import FilterForm from "./FilterForm.astro";
+import Icon from "./Icon.astro";
+import ToolRow from "./ToolRow.astro";
+
+// The shared body of every list page: active-filter chips, the filter sidebar
+// (a dialog on phones), sort, the ranked list, pagination and the empty state.
+interface Props {
+  base: string;
+  filters: Filters;
+  defaultSort: Sort;
+  result: BrowseResult;
+  groups: TagGroups;
+  categories: string[];
+  /** Set on /category/[name]: no category filter or chips. */
+  fixedCategory?: string;
+}
+const { base, filters, defaultSort, result, groups, categories, fixedCategory } = Astro.props;
+// On a category page the category is the page itself: no chip, no ?category= in links.
+const f = fixedCategory ? { ...filters, categories: [] } : filters;
+const { tools, total, facets } = result;
+
+const tagLabels = new Map(groups.flatMap((g) => g.tags.map((t) => [t.slug, t.label] as const)));
+const chips = activeChips(base, f, defaultSort, { category: (c) => categoryStyle(c).label, tag: (t) => tagLabels.get(t) ?? t });
+const clearHref = browseHref(base, { ...f, categories: [], tags: [], license: "", stars: 0, langs: [], seen: 0 }, defaultSort);
+const first = total === 0 ? 0 : (f.page - 1) * PAGE_SIZE + 1;
+const last = Math.min(f.page * PAGE_SIZE, total);
+const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
+const pageHref = (n: number) => browseHref(base, f, defaultSort, { page: n });
+const sortOptions = (Object.keys(SORTS) as Sort[]).filter((s) => s !== "best" || f.q);
+const sortKept = [...filterParams({ ...f, page: 1 }, defaultSort)].filter(([k]) => k !== "sort");
+const filterCount = chips.length;
+
+const chipClass =
+  "inline-flex min-h-9 items-center gap-1 rounded-full bg-white px-3 text-sm ring-1 ring-stone-300 ring-inset hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-lime-600 dark:bg-stone-900 dark:ring-stone-700 dark:hover:bg-stone-800";
+const button =
+  "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-white px-4 text-sm font-semibold ring-1 ring-stone-300 ring-inset hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime-600 dark:bg-stone-900 dark:ring-stone-700 dark:hover:bg-stone-800";
+const select =
+  "h-11 rounded-lg bg-white pr-8 pl-3 text-sm ring-1 ring-stone-300 ring-inset focus-visible:outline-2 focus-visible:outline-lime-600 lg:h-9 dark:bg-stone-900 dark:ring-stone-700";
+const pagerLink = button;
+const formProps = { action: base, filters: f, defaultSort, facets, groups, categories, hideCategories: Boolean(fixedCategory) };
+---
+
+{
+  chips.length > 0 && (
+    <ul class="mb-6 flex flex-wrap items-center gap-2" aria-label="Active filters">
+      {chips.map((c) => (
+        <li>
+          <a href={c.href} class={chipClass} aria-label={`Remove filter: ${c.label}`}>
+            {c.label} <Icon name="xMark" class="size-4 text-stone-500" />
+          </a>
+        </li>
+      ))}
+      <li>
+        <a href={clearHref} class="ml-1 text-sm font-medium text-lime-700 hover:underline dark:text-lime-400">
+          Clear all
+        </a>
+      </li>
+    </ul>
+  )
+}
+
+<div class="lg:grid lg:grid-cols-[240px_1fr] lg:gap-8">
+  <aside class="hidden lg:block" aria-label="Filters">
+    <FilterForm idPrefix="side" {...formProps} />
+  </aside>
+
+  <section aria-labelledby="list-heading">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <h2 id="list-heading" class="text-sm text-stone-600 dark:text-stone-300">
+        <span class="font-semibold text-stone-900 dark:text-stone-50">{total.toLocaleString("en")} {total === 1 ? "tool" : "tools"}</span>
+        {
+          f.sort === "trending" && (
+            <>
+              , ranked by sources, chatter and star growth.{" "}
+              <a href="/about#ranking" class="font-medium text-lime-700 hover:underline dark:text-lime-400">How ranking works</a>
+            </>
+          )
+        }
+      </h2>
+      <div class="flex w-full gap-2 lg:w-auto">
+        <button type="button" class={`${button} flex-1 lg:hidden`} data-open-dialog="filters-dialog">
+          Filters{filterCount > 0 && <span class="rounded-full bg-lime-400 px-1.5 font-mono text-xs text-lime-950">{filterCount}</span>}
+        </button>
+        <form method="get" action={base} class="flex flex-1 items-center gap-2 lg:flex-none" data-autosubmit>
+          {sortKept.map(([k, v]) => <input type="hidden" name={k} value={v} />)}
+          <label for="sort" class="sr-only">Sort</label>
+          <select id="sort" name="sort" class={`${select} w-full lg:w-auto`}>
+            {sortOptions.map((s) => <option value={s} selected={f.sort === s}>{SORTS[s]}</option>)}
+          </select>
+          <button type="submit" class={`${button} lg:min-h-9`} data-autosubmit-hide>Sort</button>
+        </form>
+      </div>
+    </div>
+
+    {
+      !fixedCategory && (
+        <nav class="-mx-4 mt-4 flex gap-2 overflow-x-auto px-4 pb-1 lg:hidden" aria-label="Categories">
+          <a href={browseHref(base, f, defaultSort, { categories: [] })} class={`${chipClass} shrink-0 ${f.categories.length === 0 ? "bg-lime-400! font-semibold text-lime-950 ring-lime-400!" : ""}`} aria-current={f.categories.length === 0 ? "page" : undefined}>All</a>
+          {categories.map((slug) => {
+            const c = categoryStyle(slug);
+            const active = f.categories.length === 1 && f.categories[0] === slug;
+            return (
+              <a href={browseHref(base, f, defaultSort, { categories: [slug] })} class={`${chipClass} shrink-0 ${active ? "bg-lime-400! font-semibold text-lime-950 ring-lime-400!" : ""}`} aria-current={active ? "page" : undefined}>
+                <span class={`size-2 rounded-full ${c.dot}`} aria-hidden="true" />
+                {c.label}
+              </a>
+            );
+          })}
+        </nav>
+      )
+    }
+
+    {
+      tools.length > 0 ? (
+        <ol class="mt-4 divide-y divide-stone-200 overflow-hidden rounded-xl bg-white shadow-xs ring-1 ring-stone-200 dark:divide-stone-800 dark:bg-stone-900 dark:ring-stone-800">
+          {tools.map((tool, i) => (
+            <ToolRow tool={tool} rank={first + i} tagLabels={tagLabels} />
+          ))}
+        </ol>
+      ) : (
+        <div class="mt-4 rounded-xl bg-white px-6 py-12 text-center ring-1 ring-stone-200 dark:bg-stone-900 dark:ring-stone-800">
+          <span class="rounded-full bg-stone-100 px-2.5 py-1 font-mono text-xs tracking-widest text-stone-600 uppercase dark:bg-stone-800 dark:text-stone-300">0 results</span>
+          <p class="mt-4 text-lg font-semibold">The bucket is empty for this one.</p>
+          {
+            chips.length > 0 ? (
+              <>
+                <p class="mt-1 text-stone-600 dark:text-stone-300">
+                  Nothing matches{f.q && <> “{f.q}”</>} with {chips.length === 1 ? "this filter" : `these ${chips.length} filters`}. Removing one usually helps.
+                </p>
+                <ul class="mt-4 flex flex-wrap justify-center gap-2">
+                  {chips.map((c) => (
+                    <li>
+                      <a href={c.href} class={chipClass}>
+                        Drop {c.label} <Icon name="xMark" class="size-4 text-stone-500" />
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : f.q ? (
+              <p class="mt-1 text-stone-600 dark:text-stone-300">Nothing matches “{f.q}”. Try fewer or shorter words.</p>
+            ) : (
+              <p class="mt-1 text-stone-600 dark:text-stone-300">Nothing has made it through review yet. Check back after the next run.</p>
+            )
+          }
+          {base !== "/" && (
+            <p class="mt-6 text-sm">
+              <a href="/" class="font-medium text-lime-700 hover:underline dark:text-lime-400">Or browse what's trending</a>
+            </p>
+          )}
+        </div>
+      )
+    }
+
+    {
+      total > PAGE_SIZE && (
+        <nav class="mt-6 flex items-center justify-between gap-4" aria-label="Pagination">
+          <p class="font-mono text-xs text-stone-500 tabular-nums dark:text-stone-400">
+            {first}–{last} of {total.toLocaleString("en")}
+          </p>
+          <div class="flex gap-2">
+            {f.page > 1 && <a href={pageHref(f.page - 1)} rel="prev" class={pagerLink}>Previous</a>}
+            {f.page < lastPage && <a href={pageHref(f.page + 1)} rel="next" class={pagerLink}>Next page</a>}
+          </div>
+        </nav>
+      )
+    }
+  </section>
+</div>
+
+<dialog
+  id="filters-dialog"
+  aria-labelledby="filters-dialog-title"
+  class="fixed inset-y-0 right-0 left-auto m-0 h-dvh max-h-dvh w-[344px] max-w-full bg-white p-0 text-stone-900 shadow-xl backdrop:bg-stone-950/60 dark:bg-stone-900 dark:text-stone-50"
+>
+  <div class="flex h-full flex-col">
+    <div class="flex h-16 shrink-0 items-center justify-between border-b border-stone-200 px-4 dark:border-stone-800">
+      <h2 id="filters-dialog-title" class="text-lg font-bold">Filters</h2>
+      <button type="button" class="inline-flex size-11 items-center justify-center rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800" aria-label="Close filters" data-close-dialog>
+        <Icon name="xMark" />
+      </button>
+    </div>
+    <div class="flex-1 overflow-y-auto px-4 py-6">
+      <FilterForm idPrefix="dialog" large {...formProps} />
+    </div>
+    <div class="flex shrink-0 items-center gap-3 border-t border-stone-200 p-4 dark:border-stone-800">
+      <a href={clearHref} class={`${button} flex-1`}>Clear all</a>
+      <button type="submit" form="dialog-form" class="inline-flex min-h-11 flex-1 items-center justify-center rounded-lg bg-lime-400 px-4 text-sm font-semibold text-lime-950 hover:bg-lime-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime-600">
+        Show results
+      </button>
+    </div>
+  </div>
+</dialog>

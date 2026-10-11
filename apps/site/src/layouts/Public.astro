@@ -148,6 +148,39 @@ const menuLink = `flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm text-
         search.focus();
       });
 
+      // Filter and sort forms: drop empty values so URLs stay clean, and submit
+      // [data-autosubmit] forms as soon as a choice changes (their button is a no-JS fallback).
+      document.querySelectorAll("form[data-autosubmit] [data-autosubmit-hide]").forEach(function (b) {
+        b.hidden = true;
+      });
+      document.addEventListener("change", function (e) {
+        var form = e.target.form;
+        if (form && form.hasAttribute("data-autosubmit")) form.requestSubmit();
+      });
+      document.addEventListener("submit", function (e) {
+        if (e.target.method !== "get") return;
+        e.target.querySelectorAll("input, select").forEach(function (el) {
+          if (el.name && el.value === "" && (el.checked || el.type === "hidden" || el.tagName === "SELECT")) el.disabled = true;
+        });
+      });
+      // Re-enable after back/forward navigation restores the page.
+      window.addEventListener("pageshow", function () {
+        document.querySelectorAll("form input:disabled, form select:disabled").forEach(function (el) {
+          el.disabled = false;
+        });
+      });
+
+      // Dialogs (the phone filter panel): open, close, and close on a backdrop tap.
+      document.addEventListener("click", function (e) {
+        var opener = e.target.closest("[data-open-dialog]");
+        var dialog = opener && document.getElementById(opener.getAttribute("data-open-dialog"));
+        if (dialog && !dialog.open) dialog.showModal();
+        var closer = e.target.closest("[data-close-dialog]");
+        if (closer) closer.closest("dialog").close();
+        // The panel inside fills the dialog, so a click on the dialog itself is the backdrop.
+        if (e.target.tagName === "DIALOG") e.target.close();
+      });
+
       // Close open menus on a click outside them, or on Escape (focus goes back to the menu button).
       function openMenus() {
         return document.querySelectorAll("details[data-menu][open]");

@@ -214,23 +214,23 @@ All state lives in one D1 database. Extracted article text is stored in R2, keye
 
 ## Frontend
 
-The site is Astro with the Cloudflare adapter, deployed as a Worker with static assets on the custom domain `slopbucket.app` (no `workers.dev` URL). Pages are server-rendered from D1 and cached at the edge for 5 minutes (the Workers Cache API, in `middleware.ts`; `/admin` and `/api` are never cached). The cache key is the path plus the query parameters a page reads (`PAGE_PARAMS` in `lib/edge-cache.ts`), so stray parameters can't multiply cache entries; a page that reads a new parameter adds it there. Data changes once a day, so a short TTL keeps pages fresh without purging, and pages stay fast and indexable without a rebuild per day.
+The site is Astro with the Cloudflare adapter, deployed as a Worker with static assets on the custom domain `slopbucket.app` (no `workers.dev` URL). Pages are server-rendered from D1 and cached at the edge for 5 minutes (the Workers Cache API, in `middleware.ts`; `/admin` and `/api` are never cached). The cache key is the path plus the filters as `parseFilters` reads them, written back in one canonical form (`pageCacheKey` in `lib/edge-cache.ts`), so unknown parameters, bad values and reorderings share one entry. Data changes once a day, so a short TTL keeps pages fresh without purging, and pages stay fast and indexable without a rebuild per day.
 
 | Route | Content |
 | --- | --- |
 | `/` | Trending tools, 25 per page (`?page=`): rank, avatar, name, one-line description, category, open or closed badge, sources, up to 3 tags, published post count, latest activity, stars and the 7-day star gain (shown once a snapshot at least 7 days old exists). Above the list: the last daily run and three counts (published tools, all stored posts, dropped posts). Only published tools and published posts appear |
 | `/avatar/[owner]` | The GitHub owner's avatar (`github.com/{owner}.png?size=88`), proxied so visitors' browsers never contact GitHub, or an SVG monogram when GitHub has none; cached at the edge. Tools without a repo get a monogram tile in their category's color instead |
-| `/new` | Newest tools by first-seen date |
+| `/new` | Newest tools by first-seen date, with the same filters |
 | `/tools/[slug]` | Tool page: description, category and tags, homepage and GitHub links, GitHub stats (stars, license, language), and a timeline of posts and releases, newest first, with a "report this" link |
-| `/category/[name]` | Trending within one category |
-| `/search` | Full-text search with filters |
+| `/category/[name]` | Trending within one category (404 for a slug not in `categories`), with the other filters |
+| `/search` | Full-text search (`q`) with the same filters; sorted by best match (FTS5 `bm25`, name matches weighted highest) with matches highlighted |
 | `/about` | What the site is, and how ranking works (`#ranking`, with the weights read from `trending_weights`) |
 | `/api/*` | JSON endpoints for search, filters and reports |
 | `/admin/*` | Review queue, tools, settings, reports and status panel |
 
 **Look:** the visual spec is `docs/UI-HANDOFF.md`: Tailwind lime on stone, Space Grotesk and Space Mono (self-hosted with Fontsource), and the pail-pig logo (`apps/site/public/`). Public pages share `layouts/Public.astro` (header, footer, theme toggle). They are light by default with a dark mode: a small inline script sets a `dark` class on `<html>` from the visitor's saved choice or the OS setting before first paint. The same script closes header menus on Escape and makes `/` focus search. Admin pages leave the script out and stay light. Category labels and colors live in `packages/core` (`categoryDisplay`); a category added from settings shows its slug, capitalized, in stone until code adds a label.
 
-**Search and filters:** text query, category, open or closed, language, star range and first-seen date range. The filter state lives in the URL, so results can be shared and indexed.
+**Search and filters:** every list page (`/`, `/new`, `/search`, `/category/[name]`) shares one filter set, read from the URL so results can be shared and indexed: `q` (text), `category` (repeatable), `tag` (repeatable; any of the chosen tags within a tag group, and every group with a choice), `license` (`open` or `closed`), `stars` (at least 10, 100, 1k or 10k, from the latest repo snapshot), `lang` (repeatable, GitHub's repo language), `seen` (first seen in the last 7, 30 or 90 days), `sort` (trending, newest, most stars, most discussed = most published posts; best match with a query) and `page`. The sidebar shows faceted counts: each option's count applies every other active filter but not its own group's. Active filters show as removable chips. On desktop the sidebar submits on change (with an Apply button when JavaScript is off); on phones the same form opens in a native `<dialog>` with a Show results button. Matched text in names and descriptions is highlighted with FTS5 `highlight()`, HTML-escaped before the `<mark>` tags are added.
 
 **Reports:** a small form with a reason (not an AI coding tool, wrong merge, spam, broken link) and an optional note. It is rate-limited per IP with Cloudflare's rate limiting binding, and Turnstile blocks bots.
 

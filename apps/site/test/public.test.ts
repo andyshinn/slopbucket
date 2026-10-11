@@ -2,7 +2,10 @@ import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
 import { avatarResponse, isGithubLogin, monogramSvg } from "../src/lib/avatar.ts";
 import { cacheableCopy, isCacheablePath, pageCacheKey } from "../src/lib/edge-cache.ts";
-import { PAGE_SIZE, compactNumber, dayAgo, homeStats, pageParam, repoOwner, trendingTools } from "../src/lib/public.ts";
+import { PAGE_SIZE, compactNumber, dayAgo, homeStats, pageParam, repoOwner } from "../src/lib/public.ts";
+import { browse, parseFilters } from "../src/lib/browse.ts";
+
+const trendingTools = (_db: D1Database, page: number) => browse(_db, { ...parseFilters(new URLSearchParams()), page }, []);
 
 const db = env.DB;
 beforeEach(async () => {
@@ -154,6 +157,12 @@ describe("edge cache", () => {
     const key = (u: string) => pageCacheKey(new URL(u)).url;
     expect(key("https://slopbucket.app/?utm_source=x&page=2")).toBe("https://slopbucket.app/?page=2");
     expect(key("https://slopbucket.app/?a=1")).toBe("https://slopbucket.app/");
+    expect(key("https://slopbucket.app/search?tag=b&q=x&tag=a&utm=1")).toBe("https://slopbucket.app/search?q=x&tag=b&tag=a");
+    // Equivalent filters share a key; bad values drop out.
+    expect(key("https://slopbucket.app/search?q=%20x%20&tag=b&tag=b&stars=7&license=maybe&page=1")).toBe("https://slopbucket.app/search?q=x&tag=b");
+    // The sort stays as asked for, since pages differ in their default.
+    expect(key("https://slopbucket.app/new?sort=trending")).toBe("https://slopbucket.app/new?sort=trending");
+    expect(key("https://slopbucket.app/new?sort=bogus")).toBe("https://slopbucket.app/new");
     expect(key("https://slopbucket.app/about?b=2#ranking")).toBe("https://slopbucket.app/about");
   });
 

@@ -62,6 +62,6 @@ const HUE_CLASSES: Record<CategoryHue, { badge: string; tile: string; dot: strin
 
 /** A category's label plus the classes for its badge, monogram tile and filter dot. */
 export function categoryStyle(slug: string) {
-  const { label, hue } = categoryDisplay(slug);
-  return { slug, label, hue, ...HUE_CLASSES[hue] };
+  const display = categoryDisplay(slug);
+  return { ...display, ...HUE_CLASSES[display.hue] };
 }
