@@ -1,0 +1,105 @@
+---
+import type { ToolRow } from "../lib/public.ts";
+import { compactNumber, dayAgo } from "../lib/public.ts";
+import CategoryBadge from "./CategoryBadge.astro";
+import Icon from "./Icon.astro";
+import ToolAvatar from "./ToolAvatar.astro";
+
+interface Props {
+  tool: ToolRow;
+  rank: number;
+  /** Vocabulary tags by slug; tags outside it aren't shown. */
+  tagLabels: Map<string, string>;
+}
+const { tool, rank, tagLabels } = Astro.props;
+
+const SOURCES: Record<string, [abbr: string, title: string]> = {
+  hn: ["HN", "Hacker News"],
+  lobsters: ["LOB", "lobste.rs"],
+  github: ["GH", "GitHub"],
+  producthunt: ["PH", "Product Hunt"],
+};
+const tags = tool.tags.filter((t) => tagLabels.has(t)).slice(0, 3);
+const rankLabel = String(rank).padStart(2, "0");
+const posts = `${tool.posts} ${tool.posts === 1 ? "post" : "posts"}`;
+const when = tool.last_posted_at ? dayAgo(tool.last_posted_at) : null;
+const gain = tool.stars_gained_7d !== null && tool.stars_gained_7d > 0 ? `+${compactNumber(tool.stars_gained_7d)}` : null;
+const sourceBadge = "rounded bg-stone-100 px-1 text-stone-600 no-underline dark:bg-stone-800 dark:text-stone-300";
+const tagLink = "relative z-10 rounded text-lime-700 hover:underline focus-visible:outline-2 focus-visible:outline-lime-600 dark:text-lime-400 dark:focus-visible:outline-lime-400";
+---
+
+<li class="relative flex gap-3 px-4 py-4 hover:bg-stone-50 sm:gap-4 sm:px-5 dark:hover:bg-stone-800/50">
+  <div class="hidden w-7 shrink-0 pt-3 text-right font-mono text-sm text-stone-500 tabular-nums sm:block dark:text-stone-400">{rankLabel}</div>
+  <div class="flex shrink-0 flex-col items-center gap-1">
+    <ToolAvatar name={tool.name} category={tool.category} githubRepo={tool.github_repo} />
+    <span class="font-mono text-xs text-stone-500 tabular-nums sm:hidden dark:text-stone-400">#{rank}</span>
+  </div>
+
+  <div class="min-w-0 flex-1">
+    <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+      <h3 class="text-[17px] leading-6 font-semibold">
+        <a href={`/tools/${tool.slug}`} class="rounded focus-visible:outline-2 focus-visible:outline-lime-600 dark:focus-visible:outline-lime-400">
+          <span class="absolute inset-0" aria-hidden="true"></span>
+          {tool.name}
+        </a>
+      </h3>
+      <CategoryBadge category={tool.category} />
+      {
+        tool.is_open_source === true ? (
+          <span class="hidden items-center rounded-md bg-lime-50 px-2 py-0.5 text-xs font-medium text-lime-700 ring-1 ring-lime-200 ring-inset sm:inline-flex dark:bg-lime-400/10 dark:text-lime-400 dark:ring-lime-400/30">
+            Open source
+          </span>
+        ) : tool.is_open_source === false ? (
+          <span class="hidden items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium text-stone-600 ring-1 ring-stone-300 ring-inset sm:inline-flex dark:text-stone-300 dark:ring-stone-700">
+            <Icon name="lockClosed" class="size-3" /> Closed source
+          </span>
+        ) : null
+      }
+    </div>
+    {tool.description && <p class="mt-1 line-clamp-2 text-[15px]/[22px] text-stone-600 sm:line-clamp-1 dark:text-stone-300">{tool.description}</p>}
+    <p class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs text-stone-500 dark:text-stone-400">
+      {
+        tool.sources.map((s) => {
+          const [abbr, title] = SOURCES[s] ?? [s.toUpperCase(), s];
+          return (
+            <abbr title={title} class={sourceBadge}>
+              {abbr}
+            </abbr>
+          );
+        })
+      }
+      {
+        tags.map((t) => (
+          <a href={`/tag/${t}`} class={tagLink}>
+            #{t}
+          </a>
+        ))
+      }
+      <span>{when ? `${posts} · ${when}` : posts}</span>
+      {
+        tool.stars !== null && (
+          <span class="sm:hidden">
+            ★ {compactNumber(tool.stars)}
+            {gain && <span class="text-lime-700 dark:text-lime-400"> {gain}/wk</span>}
+          </span>
+        )
+      }
+    </p>
+  </div>
+
+  <div class="hidden w-28 shrink-0 pt-1 text-right font-mono text-xs tabular-nums sm:block">
+    {
+      tool.stars !== null ? (
+        <>
+          <p class="text-sm text-stone-900 dark:text-stone-50">
+            <Icon name="star" class="mb-0.5 inline size-4 text-stone-400" /> <span class="sr-only">Stars:</span>
+            {compactNumber(tool.stars)}
+          </p>
+          {gain && <p class="mt-1 text-lime-700 dark:text-lime-400">{gain} this week</p>}
+        </>
+      ) : tool.is_open_source === false ? (
+        <p class="text-stone-500 dark:text-stone-400">no public repo</p>
+      ) : null
+    }
+  </div>
+</li>

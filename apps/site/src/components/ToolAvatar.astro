@@ -1,0 +1,25 @@
+---
+import { categoryStyle } from "../lib/categories.ts";
+import { repoOwner } from "../lib/public.ts";
+
+interface Props {
+  name: string;
+  category: string;
+  githubRepo: string | null;
+  /** Tailwind size and radius classes. */
+  class?: string;
+}
+const { name, category, githubRepo, class: className = "size-11 rounded-[10px]" } = Astro.props;
+const owner = repoOwner(githubRepo);
+const initial = (name.match(/[\p{L}\p{N}]/u)?.[0] ?? "?").toUpperCase();
+---
+
+{
+  owner ? (
+    <img src={`/avatar/${owner}`} alt="" width="88" height="88" loading="lazy" class={`${className} shrink-0 bg-stone-100 object-cover dark:bg-stone-800`} />
+  ) : (
+    <span class={`${className} flex shrink-0 items-center justify-center text-lg font-semibold ${categoryStyle(category).tile}`} aria-hidden="true">
+      {initial}
+    </span>
+  )
+}
