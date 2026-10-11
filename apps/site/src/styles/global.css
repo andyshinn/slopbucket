@@ -1,9 +1,37 @@
 @import "tailwindcss";
 
-/* Brand color, used for primary actions and links. Tailwind's palette otherwise. */
+/* Self-hosted fonts (Latin only), shipped as Worker static assets. */
+@import "@fontsource/space-grotesk/latin-400.css";
+@import "@fontsource/space-grotesk/latin-500.css";
+@import "@fontsource/space-grotesk/latin-600.css";
+@import "@fontsource/space-grotesk/latin-700.css";
+@import "@fontsource/space-mono/latin-400.css";
+@import "@fontsource/space-mono/latin-700.css";
+
+/* Dark mode follows a `dark` class on <html>, set before first paint by the
+   inline script in layouts/Public.astro. Admin pages never get the class. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Brand: Tailwind lime on stone neutrals (docs/UI-HANDOFF.md, Tokens).
+   Text on a lime fill is always lime-950; lime text in light mode is never lighter than lime-700. */
 @theme {
-  --color-brand-50: var(--color-indigo-50);
-  --color-brand-100: var(--color-indigo-100);
-  --color-brand-600: var(--color-indigo-600);
-  --color-brand-700: var(--color-indigo-700);
+  --font-sans: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Space Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-brand-50: var(--color-lime-50);
+  --color-brand-100: var(--color-lime-100);
+  --color-brand-200: var(--color-lime-200);
+  --color-brand-300: var(--color-lime-300);
+  --color-brand-400: var(--color-lime-400);
+  --color-brand-600: var(--color-lime-600);
+  --color-brand-700: var(--color-lime-700);
+  --color-brand-950: var(--color-lime-950);
+}
+
+/* The home page's highlighter band behind a word. */
+.highlight {
+  background: linear-gradient(transparent 58%, var(--color-lime-400) 58% 92%, transparent 92%);
+}
+.dark .highlight {
+  background: linear-gradient(transparent 58%, color-mix(in oklab, var(--color-lime-400) 40%, transparent) 58% 92%, transparent 92%);
 }

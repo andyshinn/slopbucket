@@ -1,10 +1,10 @@
 // Shared Tailwind class strings for the admin UI. Tap targets are at least 44px tall.
 export const btn =
   "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-base font-semibold shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50";
-export const btnPrimary = `${btn} bg-brand-600 text-white hover:bg-brand-700 focus-visible:outline-brand-600`;
 // Lime fill always takes lime-950 text (white fails contrast); see docs/UI-HANDOFF.md.
 export const accentFill = "bg-lime-400 text-lime-950";
 export const accentLink = "font-medium text-lime-700 underline underline-offset-2";
+export const btnPrimary = `${btn} ${accentFill} hover:bg-lime-300 focus-visible:outline-lime-600`;
 export const btnApprove = `${btn} ${accentFill} hover:bg-lime-300 focus-visible:outline-lime-600`;
 export const btnReject = `${btn} bg-white text-red-700 ring-1 ring-red-300 ring-inset hover:bg-red-50 focus-visible:outline-red-600`;
 export const btnSecondary = `${btn} bg-white text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus-visible:outline-gray-600`;

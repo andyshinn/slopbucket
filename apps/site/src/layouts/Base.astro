@@ -3,20 +3,27 @@ import "../styles/global.css";
 
 interface Props {
   title: string;
+  description?: string;
   noindex?: boolean;
+  /** Classes for <html> (page background, dark-mode color scheme). */
+  htmlClass?: string;
+  bodyClass?: string;
 }
-const { title, noindex = false } = Astro.props;
+const { title, description, noindex = false, htmlClass = "bg-gray-50", bodyClass = "text-gray-900" } = Astro.props;
 ---
 
 <!doctype html>
-<html lang="en" class="h-full bg-gray-50">
+<html lang="en" class={`h-full ${htmlClass}`}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     {noindex && <meta name="robots" content="noindex, nofollow" />}
+    {description && <meta name="description" content={description} />}
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>{title}</title>
+    <slot name="head" />
   </head>
-  <body class="h-full text-gray-900 antialiased">
+  <body class={`h-full antialiased ${bodyClass}`}>
     <slot />
   </body>
 </html>
