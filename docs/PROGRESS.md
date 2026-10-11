@@ -2,7 +2,7 @@
 
 Where Slop Bucket stands, so a new session can pick up without the chat history. Update this file in each PR that moves the launch plan, changes what's next, or resolves an open issue.
 
-**Last updated:** 2026-10-11 (admin Reports page)
+**Last updated:** 2026-10-11 (step 5: admin nav and stone neutrals)
 
 ## Resuming in a new session
 
@@ -32,7 +32,7 @@ Built outside the plan's step list, all needed before launch: the daily trending
 3. **Review the queue** as it fills. Use Tools → Merge for duplicate tools. Mark good decisions as few-shot examples.
 4. **Build while the backfill runs:**
    - ~~Queue page improvements~~: done (Resolves to box, tag chips, reason quote, lime Approve).
-   - **The public site**, following the handoff's suggested build order. Steps 1 (tokens, layout, theme, `/about`), 2 (home trending list, rows, `/avatar/[owner]`, 5-minute edge cache) 3 (filters with faceted counts, sort, `/search`, `/new`, `/category/[name]`, the phone filter dialog) and 4 (tool pages with merge redirects, the report form, per-IP rate limits) are done. The admin Reports page (handoff step 8) is done too. **Next:** turn on reports (Turnstile, below), then step 5, the admin restyle (new nav, queue item polish, lime Approve). Merge redirects (301 from a merged tool's slug) are part of the tool page.
+   - **The public site**, following the handoff's suggested build order. Steps 1 (tokens, layout, theme, `/about`), 2 (home trending list, rows, `/avatar/[owner]`, 5-minute edge cache) 3 (filters with faceted counts, sort, `/search`, `/new`, `/category/[name]`, the phone filter dialog) and 4 (tool pages with merge redirects, the report form, per-IP rate limits) are done. The admin Reports page (handoff step 8) is done too. Step 5 (admin restyle: top bar with logo, ADMIN chip and View site; scrolling underline tabs with counts; stone neutrals; the queue polish and lime Approve came earlier in #19) is done. **Next:** step 6's remaining polish (Tools list table and edit page per the handoff), the Status page restyle, or step 9, the desktop admin shell. Merge redirects (301 from a merged tool's slug) are part of the tool page.
    - ~~Reports page (admin)~~: done.
 5. **Step 7 tuning** against the backfilled data, then **step 8**: lower `review_threshold`, re-classify unreviewed posts so confident ones auto-publish, and go public.
 

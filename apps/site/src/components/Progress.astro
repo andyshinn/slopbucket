@@ -12,12 +12,12 @@ const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
 
 <div class="mt-3">
   <div class="flex justify-between gap-3 text-sm">
-    <span class="font-medium text-gray-900">{label}</span>
-    <span class="text-gray-600 tabular-nums">{done.toLocaleString()} of {total.toLocaleString()}</span>
+    <span class="font-medium text-stone-900">{label}</span>
+    <span class="text-stone-600 tabular-nums">{done.toLocaleString()} of {total.toLocaleString()}</span>
   </div>
   {/* No total yet (e.g. a backfill that has stored nothing): indeterminate, so no value attributes. */}
   <div
-    class="mt-1.5 h-2 overflow-hidden rounded-full bg-gray-200"
+    class="mt-1.5 h-2 overflow-hidden rounded-full bg-stone-200"
     role="progressbar"
     aria-label={label}
     aria-valuemin={total > 0 ? 0 : undefined}
@@ -26,5 +26,5 @@ const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
   >
     <div class="h-2 rounded-full bg-brand-600" style={`width: ${pct}%`}></div>
   </div>
-  {detail && <p class="mt-1 text-xs text-gray-500">{detail}</p>}
+  {detail && <p class="mt-1 text-xs text-stone-500">{detail}</p>}
 </div>

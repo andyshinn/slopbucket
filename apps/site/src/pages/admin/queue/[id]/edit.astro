@@ -39,7 +39,7 @@ const suggested = Array.isArray(v.suggested_tags) ? v.suggested_tags.map(String)
 <Admin title="Edit post" section="queue">
   <a href={`/admin/queue/${id}`} class="text-sm font-medium text-brand-700">← Back to post</a>
   <h1 class="mt-2 text-lg font-semibold">Edit and approve</h1>
-  <p class="mt-1 text-sm text-gray-600 break-words">{item.post.title}</p>
+  <p class="mt-1 text-sm text-stone-600 break-words">{item.post.title}</p>
 
   {error && <div class="mt-4"><Notice tone="error">{error}</Notice></div>}
 
@@ -48,7 +48,7 @@ const suggested = Array.isArray(v.suggested_tags) ? v.suggested_tags.map(String)
       <legend class={label}>Is this an AI coding tool?</legend>
       <div class="mt-2 grid grid-cols-2 gap-2">
         {[["true", "Yes"], ["false", "No, out of scope"]].map(([value, text]) => (
-          <label class="flex min-h-11 items-center gap-2 rounded-lg px-3 ring-1 ring-gray-300 has-checked:bg-brand-50 has-checked:ring-brand-600">
+          <label class="flex min-h-11 items-center gap-2 rounded-lg px-3 ring-1 ring-stone-300 has-checked:bg-brand-50 has-checked:ring-brand-600">
             <input type="radio" name="is_ai_dev_tool" value={value} checked={String(v.is_ai_dev_tool !== false) === value} class="size-4 accent-brand-600" />
             {text}
           </label>
@@ -92,7 +92,7 @@ const suggested = Array.isArray(v.suggested_tags) ? v.suggested_tags.map(String)
         <legend class={label}>Open source</legend>
         <div class="mt-1 grid grid-cols-2 gap-2">
           {[["true", "Yes"], ["false", "No"]].map(([value, text]) => (
-            <label class="flex min-h-11 items-center gap-2 rounded-lg px-3 ring-1 ring-gray-300 has-checked:bg-brand-50 has-checked:ring-brand-600">
+            <label class="flex min-h-11 items-center gap-2 rounded-lg px-3 ring-1 ring-stone-300 has-checked:bg-brand-50 has-checked:ring-brand-600">
               <input type="radio" name="is_open_source" value={value} checked={String(v.is_open_source === true) === value} class="size-4 accent-brand-600" />
               {text}
             </label>
@@ -104,10 +104,10 @@ const suggested = Array.isArray(v.suggested_tags) ? v.suggested_tags.map(String)
       <legend class={label}>Tags</legend>
       {tagGroups.map((g) => (
         <div class="mt-2">
-          <p class="text-xs font-medium text-gray-500">{g.label}</p>
+          <p class="text-xs font-medium text-stone-500">{g.label}</p>
           <div class="mt-1 flex flex-wrap gap-2">
             {g.tags.map((t) => (
-              <label class="inline-flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm ring-1 ring-gray-300 ring-inset has-checked:bg-brand-50 has-checked:ring-brand-600">
+              <label class="inline-flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm ring-1 ring-stone-300 ring-inset has-checked:bg-brand-50 has-checked:ring-brand-600">
                 <input type="checkbox" name="tags" value={t.slug} checked={selectedTags.has(t.slug)} class="size-4 accent-brand-600" />
                 {t.label}
               </label>
@@ -115,15 +115,15 @@ const suggested = Array.isArray(v.suggested_tags) ? v.suggested_tags.map(String)
           </div>
         </div>
       ))}
-      {suggested.length > 0 && <p class="mt-2 text-xs text-gray-500">The model also suggested: {suggested.join(", ")} (add them under Settings → Tags to use them).</p>}
+      {suggested.length > 0 && <p class="mt-2 text-xs text-stone-500">The model also suggested: {suggested.join(", ")} (add them under Settings → Tags to use them).</p>}
     </fieldset>
     <div>
-      <label for="description" class={label}>Description <span class="font-normal text-gray-500">(under 140 characters)</span></label>
+      <label for="description" class={label}>Description <span class="font-normal text-stone-500">(under 140 characters)</span></label>
       <textarea id="description" name="description" rows="3" maxlength="140" class={`${input} mt-1`}>{s("description")}</textarea>
     </div>
 
-    <label class="flex min-h-11 items-center gap-3 text-sm text-gray-700">
-      <input type="checkbox" name="use_in_prompt" checked={useInPrompt} class="size-5 rounded border-gray-300 accent-brand-600" />
+    <label class="flex min-h-11 items-center gap-3 text-sm text-stone-700">
+      <input type="checkbox" name="use_in_prompt" checked={useInPrompt} class="size-5 rounded border-stone-300 accent-brand-600" />
       Use as a few-shot example
     </label>
 
@@ -131,6 +131,6 @@ const suggested = Array.isArray(v.suggested_tags) ? v.suggested_tags.map(String)
       <a href={`/admin/queue/${id}`} class={btnSecondary}>Cancel</a>
       <button type="submit" class={btnPrimary}>Save</button>
     </div>
-    <p class="text-xs text-gray-500">Saving approves the post, or rejects it if you marked it out of scope or as a roundup.</p>
+    <p class="text-xs text-stone-500">Saving approves the post, or rejects it if you marked it out of scope or as a roundup.</p>
   </form>
 </Admin>

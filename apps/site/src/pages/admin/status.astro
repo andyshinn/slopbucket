@@ -115,7 +115,7 @@ const sourceLabel = (s: string) => (s === "all" ? "all sources" : (SOURCE_LABELS
             <h1 class="text-lg font-semibold">
               Backfill {confirm.days} days of {sourceLabel(confirm.source)}?
             </h1>
-            <ul class="mt-3 list-disc space-y-1 pl-5 text-sm text-gray-700">
+            <ul class="mt-3 list-disc space-y-1 pl-5 text-sm text-stone-700">
               <li>About {confirm.estimate.posts.toLocaleString()} posts to classify (rough estimate).</li>
               <li>About ${confirm.estimate.costUsd.toFixed(2)} of Workers AI, within the $2/day AI Gateway cap.</li>
               <li>At least {Math.ceil(confirm.estimate.hours)} hours at ~{CLASSIFY_PER_MINUTE} classifications a minute; longer if the daily cap is reached.</li>
@@ -125,15 +125,15 @@ const sourceLabel = (s: string) => (s === "all" ? "all sources" : (SOURCE_LABELS
         ) : (
           <>
             <h1 class="text-lg font-semibold">Re-classify {confirm.posts.toLocaleString()} unreviewed queued posts?</h1>
-            <ul class="mt-3 list-disc space-y-1 pl-5 text-sm text-gray-700">
+            <ul class="mt-3 list-disc space-y-1 pl-5 text-sm text-stone-700">
               <li>They go back to "waiting to classify" and are re-run with the current model and prompt, using cached text.</li>
               <li>Tools only they had created are removed; published tools and anything you reviewed are kept.</li>
               <li>{confirm.kept.toLocaleString()} queued posts you already acted on (for example, moved) stay as they are.</li>
               <li>About ${(confirm.posts * 0.0004).toFixed(2)} and {minutes(Math.ceil(confirm.posts / CLASSIFY_PER_MINUTE))}.</li>
             </ul>
             {confirm.oldDrops > 0 && (
-              <label class="mt-4 flex gap-3 rounded-lg bg-gray-50 p-3 text-sm">
-                <input type="checkbox" name="old_drops" value="yes" form="confirm-form" checked class="mt-0.5 size-5 shrink-0 rounded border-gray-300 text-brand-600" />
+              <label class="mt-4 flex gap-3 rounded-lg bg-stone-50 p-3 text-sm">
+                <input type="checkbox" name="old_drops" value="yes" form="confirm-form" checked class="mt-0.5 size-5 shrink-0 rounded border-stone-300 text-brand-600" />
                 <span>
                   Also re-check <strong>{confirm.oldDrops.toLocaleString()}</strong> posts dropped by an older model, in case it missed real tools. Adds about ${(confirm.oldDrops * 0.0004).toFixed(2)} and {minutes(Math.ceil(confirm.oldDrops / CLASSIFY_PER_MINUTE))}.
                 </span>
@@ -162,13 +162,13 @@ const sourceLabel = (s: string) => (s === "all" ? "all sources" : (SOURCE_LABELS
             <div class="flex items-center justify-between">
               <h2 class="text-lg font-semibold">In progress</h2>
               <a href="/admin/status" class={btnSecondary}>
-                <Icon name="arrowPath" class="size-4 text-gray-500" /> Refresh
+                <Icon name="arrowPath" class="size-4 text-stone-500" /> Refresh
               </a>
             </div>
             {progress.pending > 0 && (
               <div class={`${card} mt-2 p-4`}>
                 <p class="font-semibold">Classifying</p>
-                <p class="mt-0.5 text-sm text-gray-600">
+                <p class="mt-0.5 text-sm text-stone-600">
                   {progress.pending.toLocaleString()} waiting
                   {progress.perMinute > 0 && ` · ~${rate(progress.perMinute)} a minute`}
                   {progress.etaMinutes !== null && ` · ${aboutDuration(progress.etaMinutes)} left`}
@@ -192,7 +192,7 @@ const sourceLabel = (s: string) => (s === "all" ? "all sources" : (SOURCE_LABELS
                         <Icon name="check" class="size-3.5" /> Done {timeAgo(op.finished_at)}
                       </span>
                     ) : (
-                      <span class="shrink-0 text-xs text-gray-500">Started {timeAgo(op.started_at)}</span>
+                      <span class="shrink-0 text-xs text-stone-500">Started {timeAgo(op.started_at)}</span>
                     )}
                   </div>
                   {op.fetch && (
@@ -223,10 +223,10 @@ const sourceLabel = (s: string) => (s === "all" ? "all sources" : (SOURCE_LABELS
 
         <section>
           <h2 class="text-lg font-semibold">Posts</h2>
-          <dl class={`${card} mt-2 divide-y divide-gray-100 text-sm`}>
+          <dl class={`${card} mt-2 divide-y divide-stone-100 text-sm`}>
             {countRows.map(([status, text]) => (
               <div class="flex justify-between px-4 py-2.5">
-                <dt class="text-gray-600">{text}</dt>
+                <dt class="text-stone-600">{text}</dt>
                 <dd class="font-semibold tabular-nums">{(counts[status] ?? 0).toLocaleString()}</dd>
               </div>
             ))}
@@ -240,7 +240,7 @@ const sourceLabel = (s: string) => (s === "all" ? "all sources" : (SOURCE_LABELS
               <input type="hidden" name="action" value="run" />
               <input type="hidden" name="source" value="all" />
               <button type="submit" class={btnSecondary}>
-                <Icon name="play" class="size-4 text-gray-500" /> Run all now
+                <Icon name="play" class="size-4 text-stone-500" /> Run all now
               </button>
             </form>
           </div>
@@ -251,19 +251,19 @@ const sourceLabel = (s: string) => (s === "all" ? "all sources" : (SOURCE_LABELS
                   <div class="min-w-0">
                     <p class="font-semibold">{SOURCE_LABELS[s.source] ?? s.source}</p>
                     {s.last ? (
-                      <p class="mt-0.5 text-sm text-gray-600">
+                      <p class="mt-0.5 text-sm text-stone-600">
                         Last {s.last.mode === "backfill" ? "backfill" : "run"} {timeAgo(s.last.started_at)} · {s.last.finished_at ? `${(s.last.items_fetched ?? 0).toLocaleString()} fetched` : "still running"}
                         {s.weekAverage !== null && ` · 7-day avg ${Math.round(s.weekAverage).toLocaleString()}`}
                       </p>
                     ) : (
-                      <p class="mt-0.5 text-sm text-gray-600">No runs yet</p>
+                      <p class="mt-0.5 text-sm text-stone-600">No runs yet</p>
                     )}
                   </div>
                   <form method="post">
                     <input type="hidden" name="action" value="run" />
                     <input type="hidden" name="source" value={s.source} />
                     <button type="submit" class={btnSecondary} aria-label={`Run ${SOURCE_LABELS[s.source] ?? s.source} now`}>
-                      <Icon name="play" class="size-4 text-gray-500" /> Run
+                      <Icon name="play" class="size-4 text-stone-500" /> Run
                     </button>
                   </form>
                 </div>
@@ -288,17 +288,17 @@ const sourceLabel = (s: string) => (s === "all" ? "all sources" : (SOURCE_LABELS
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
                 <p class="font-semibold">Daily update</p>
-                <p class="mt-0.5 text-sm text-gray-600">
+                <p class="mt-0.5 text-sm text-stone-600">
                   {trending
                     ? `Last run ${timeAgo(trending.started_at)} · ${trending.finished_at ? `${(trending.items_fetched ?? 0).toLocaleString()} tools scored` : "still running"}`
                     : "No runs yet. Runs daily at 07:00 UTC."}
                 </p>
-                <p class="mt-1 text-xs text-gray-500">Refreshes upvotes and comments, GitHub stars, and every tool's trending score.</p>
+                <p class="mt-1 text-xs text-stone-500">Refreshes upvotes and comments, GitHub stars, and every tool's trending score.</p>
               </div>
               <form method="post">
                 <input type="hidden" name="action" value="trending" />
                 <button type="submit" class={btnSecondary} aria-label="Run the trending update now">
-                  <Icon name="play" class="size-4 text-gray-500" /> Run
+                  <Icon name="play" class="size-4 text-stone-500" /> Run
                 </button>
               </form>
             </div>
@@ -312,11 +312,11 @@ const sourceLabel = (s: string) => (s === "all" ? "all sources" : (SOURCE_LABELS
 
         <section class="mt-6">
           <h2 class="text-lg font-semibold">Re-classify the queue</h2>
-          <p class="mt-1 text-sm text-gray-600">After changing the model, prompt or categories: re-run classification on queued posts nobody has reviewed yet.</p>
+          <p class="mt-1 text-sm text-stone-600">After changing the model, prompt or categories: re-run classification on queued posts nobody has reviewed yet.</p>
           <form method="post" class="mt-2">
             <input type="hidden" name="action" value="reclassify" />
             <button type="submit" class={`${btnSecondary} w-full`}>
-              <Icon name="arrowPath" class="size-4 text-gray-500" /> Re-classify unreviewed posts…
+              <Icon name="arrowPath" class="size-4 text-stone-500" /> Re-classify unreviewed posts…
             </button>
           </form>
         </section>

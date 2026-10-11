@@ -29,10 +29,6 @@ export async function listReports(db: D1Database, resolved = false, limit = 50):
   return results;
 }
 
-export async function openReportCount(db: D1Database): Promise<number> {
-  return (await db.prepare("SELECT count(*) AS n FROM reports WHERE resolved_at IS NULL").first<number>("n")) ?? 0;
-}
-
 /** Marks a report resolved; false if it doesn't exist or was already resolved. */
 export async function resolveReport(db: D1Database, id: number): Promise<boolean> {
   const { meta } = await db
