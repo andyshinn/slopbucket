@@ -1,4 +1,4 @@
-import { type Classification, classificationSchema, getSetting, resolveTool, tagSlugs } from "@slop-bucket/core";
+import { type Classification, type TagGroups, classificationSchema, getSetting, resolveTool, tagSlugs } from "@slop-bucket/core";
 
 export interface QueuePost {
   id: number;
@@ -59,6 +59,30 @@ export async function getQueueItem(db: D1Database, id: number): Promise<QueueIte
   if (!post) return null;
   const tool = post.tool_id ? await db.prepare(`${TOOL_SUMMARY} WHERE t.id = ?`).bind(post.tool_id).first<ToolSummary>() : null;
   return { post, classification: post.classification ? JSON.parse(post.classification) : null, tool };
+}
+
+/**
+ * True when this post is the only one linked to a still-queued tool (posts of
+ * any status count). Usually the resolver created the tool for this post, but
+ * a hand-moved post can look the same, so the page says only what this checks.
+ */
+export const isNewTool = (tool: ToolSummary): boolean => tool.posts <= 1 && tool.status === "queued";
+
+export interface TagChip {
+  slug: string;
+  label: string;
+  /** False for tags outside the current vocabulary (classified before a vocabulary change). */
+  known: boolean;
+}
+
+/** A classification's tags as chips, labeled from the vocabulary. */
+export function tagChips(tags: unknown, groups: TagGroups): TagChip[] {
+  if (!Array.isArray(tags)) return [];
+  const labels = new Map(groups.flatMap((g) => g.tags.map((t) => [t.slug, t.label] as const)));
+  return [...new Set(tags.filter((t): t is string => typeof t === "string" && t !== ""))].map((slug) => {
+    const label = labels.get(slug);
+    return { slug, label: label ?? slug, known: label !== undefined };
+  });
 }
 
 /** Thrown for actions that do not apply to the post in its current state. */

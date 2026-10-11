@@ -1,10 +1,11 @@
 ---
+import { getSetting } from "@slop-bucket/core";
 import { env } from "cloudflare:workers";
 import Icon from "../../../../components/Icon.astro";
 import Notice from "../../../../components/Notice.astro";
 import Admin from "../../../../layouts/Admin.astro";
-import { ReviewError, approvePost, getQueueItem, queueCount, readArticleText, rejectPost } from "../../../../lib/review.ts";
-import { SOURCE_LABELS, btnApprove, btnReject, btnSecondary, card, githubHref, hostname, safeHref, timeAgo } from "../../../../lib/ui.ts";
+import { ReviewError, approvePost, getQueueItem, isNewTool, queueCount, readArticleText, rejectPost, tagChips } from "../../../../lib/review.ts";
+import { SOURCE_LABELS, accentFill, accentLink, btnApprove, btnReject, btnSecondary, card, githubHref, hostname, safeHref, timeAgo } from "../../../../lib/ui.ts";
 
 const id = Number(Astro.params.id);
 if (!Number.isInteger(id) || id <= 0) return Astro.redirect("/admin/queue", 302);
@@ -29,7 +30,9 @@ if (Astro.request.method === "POST") {
 const item = await getQueueItem(env.DB, id);
 if (!item) return Astro.redirect("/admin/queue", 302);
 const { post, classification: c, tool } = item;
-const [remaining, text] = await Promise.all([queueCount(env.DB), readArticleText(env.ARTICLES, id)]);
+const [remaining, text, tagGroups] = await Promise.all([queueCount(env.DB), readArticleText(env.ARTICLES, id), getSetting(env.DB, "tags")]);
+const tags = tagChips(c?.tags, tagGroups);
+const struck = tags.some((t) => !t.known);
 const queued = post.status === "queued";
 const confidence = post.confidence;
 const confidenceStyle =
@@ -47,7 +50,6 @@ const rows: [label: string, value: unknown, href?: string | null][] = c
       ["Homepage", c.homepage_url, safeHref(c.homepage_url)],
       ["GitHub", c.github_repo, githubHref(c.github_repo)],
       ["Open source", c.is_open_source ? "Yes" : "No"],
-      ["Tags", c.tags],
       ["Description", c.description],
     ]
   : [];
@@ -85,26 +87,62 @@ try {
     </h2>
     <p class="mt-1 truncate text-sm text-gray-500">{hostname(post.url)}</p>
 
-    <div class="mt-4 rounded-lg bg-gray-50 p-3 text-sm">
+    <section class="mt-4 rounded-lg bg-gray-50 p-3 text-sm" aria-labelledby="resolves-to">
+      <h3 id="resolves-to" class="font-mono text-xs tracking-widest text-gray-500 uppercase">Resolves to</h3>
       {
-        tool ? (
-          <p>
-            Tool: <span class="font-semibold">{tool.name}</span>{" "}
+        !tool ? (
+          <p class="mt-1 text-gray-600">No tool assigned. Use Edit to name it.</p>
+        ) : isNewTool(tool) ? (
+          <>
+            <p class="mt-1 flex flex-wrap items-center gap-2">
+              <span class={`rounded-md px-2 py-0.5 text-xs font-semibold ${accentFill}`}>New tool</span>
+              <a href={`/admin/tools/${tool.id}`} class="font-semibold hover:underline">{tool.name}</a>
+            </p>
+            <p class="mt-1 text-gray-600">This is the tool's only post, so approving it publishes the tool.</p>
+          </>
+        ) : (
+          <p class="mt-1">
+            <a href={`/admin/tools/${tool.id}`} class="font-semibold hover:underline">{tool.name}</a>{" "}
             <span class="text-gray-500">
               · {tool.posts} {tool.posts === 1 ? "post" : "posts"} · {tool.status}
             </span>
           </p>
-        ) : (
-          <p class="text-gray-600">No tool assigned. Use Edit to name it.</p>
         )
       }
-    </div>
+    </section>
 
     {typeof c?.reason === "string" && c.reason && (
-      <p class="mt-4 rounded-lg border-l-4 border-brand-600 bg-brand-50 px-3 py-2 text-sm text-gray-800">
-        <span class="font-medium">Model's reason:</span> {c.reason}
-      </p>
+      <figure class="mt-4">
+        <figcaption class="font-mono text-xs tracking-widest text-gray-500 uppercase">Model's reason</figcaption>
+        <blockquote class="mt-1 text-sm text-gray-800">{c.reason}</blockquote>
+      </figure>
     )}
+
+    {
+      tags.length > 0 && (
+        <div class="mt-4">
+          <p class="font-mono text-xs tracking-widest text-gray-500 uppercase">Tags</p>
+          <ul class="mt-1 flex flex-wrap gap-1.5">
+            {tags.map((t) =>
+              t.known ? (
+                <li class="rounded-md bg-gray-100 px-2 py-0.5 text-sm text-gray-700">{t.label}</li>
+              ) : (
+                <li class="rounded-md px-2 py-0.5 font-mono text-sm text-gray-500 line-through ring-1 ring-gray-200 ring-inset">
+                  <span class="sr-only">Not in your tag list: </span>
+                  {t.slug}
+                </li>
+              ),
+            )}
+          </ul>
+          {struck && (
+            <p class="mt-2 text-sm text-gray-600">
+              Struck tags aren't in your tag list. Saving with Edit drops them.{" "}
+              <a href="/admin/settings#tags" class={accentLink}>Edit tag list</a>
+            </p>
+          )}
+        </div>
+      )
+    }
 
     {
       rows.length > 0 && (
