@@ -162,10 +162,17 @@ export interface ClassifyProgress {
    * started within them, so a run that just began isn't averaged with idle time.
    */
   perMinute: number;
+  /** Enough posts were classified in the window (RATE_MIN_SAMPLES) to trust the rate. */
+  reliable: boolean;
   /** Minutes until nothing is pending at the current rate, or null when nothing is moving or it's too early to tell. */
   etaMinutes: number | null;
   /** Posts are waiting but none was classified in 15 minutes (usually the daily AI spend cap). */
   stalled: boolean;
+}
+
+/** Minutes to classify `remaining` posts at the measured rate; null when there's nothing left or the rate isn't reliable yet. */
+export function etaMinutesFor(remaining: number, progress: Pick<ClassifyProgress, "perMinute" | "reliable">): number | null {
+  return remaining > 0 && progress.reliable && progress.perMinute > 0 ? Math.ceil(remaining / progress.perMinute) : null;
 }
 
 export async function classifyProgress(db: D1Database, now = Date.now()): Promise<ClassifyProgress> {
@@ -175,21 +182,24 @@ export async function classifyProgress(db: D1Database, now = Date.now()): Promis
       `SELECT
          (SELECT count(*) FROM posts WHERE status = 'pending') AS pending,
          (SELECT count(*) FROM posts WHERE classified_at >= ?1 AND status != 'pending') AS recent,
-         (SELECT min(classified_at) FROM posts WHERE classified_at >= ?1 AND status != 'pending') AS first,
+         (SELECT min(classified_at) FROM posts WHERE classified_at >= ?1 AND status != 'pending') AS first_at,
          (SELECT min(created_at) FROM posts WHERE status = 'pending') AS oldest`,
     )
     .bind(since)
-    .first<{ pending: number; recent: number; first: string | null; oldest: string | null }>();
+    .first<{ pending: number; recent: number; first_at: string | null; oldest: string | null }>();
   const pending = r?.pending ?? 0;
   const recent = r?.recent ?? 0;
   // Measure from the first classification in the window (at least a minute), not
   // the whole window: after an idle spell the 15 minutes would mostly be idle time.
-  const elapsed = r?.first ? (now - Date.parse(r.first)) / MINUTE : RATE_WINDOW_MIN;
+  // classified_at is always ISO 8601 with a Z (set by the posts_classified_at trigger).
+  const elapsed = r?.first_at ? (now - Date.parse(r.first_at)) / MINUTE : RATE_WINDOW_MIN;
   const perMinute = recent / Math.min(RATE_WINDOW_MIN, Math.max(1, elapsed));
+  const reliable = recent >= RATE_MIN_SAMPLES;
   return {
     pending,
     perMinute,
-    etaMinutes: pending > 0 && recent >= RATE_MIN_SAMPLES ? Math.ceil(pending / perMinute) : null,
+    reliable,
+    etaMinutes: etaMinutesFor(pending, { perMinute, reliable }),
     stalled: pending > 0 && perMinute === 0 && r?.oldest != null && r.oldest < since,
   };
 }
