@@ -71,7 +71,7 @@ const tagLink = "relative z-10 rounded text-lime-700 hover:underline focus-visib
       }
       {
         tags.map((t) => (
-          <a href={`/tag/${t}`} class={tagLink}>
+          <a href={`/?tag=${encodeURIComponent(t)}`} class={tagLink}>
             #{t}
           </a>
         ))

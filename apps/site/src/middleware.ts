@@ -2,6 +2,7 @@ import { defineMiddleware } from "astro:middleware";
 import { env } from "cloudflare:workers";
 import { guardAdmin, isAdminPath } from "./lib/access.ts";
 import { cacheableCopy, edgeCache, isCacheablePath, pageCacheKey } from "./lib/edge-cache.ts";
+import { tooManyRequests, withinLimit } from "./lib/rate-limit.ts";
 
 export const onRequest = defineMiddleware(async (context, next) => {
   if (!isAdminPath(context.url.pathname)) {
@@ -10,6 +11,8 @@ export const onRequest = defineMiddleware(async (context, next) => {
     const key = pageCacheKey(context.url);
     const hit = await cache.match(key);
     if (hit) return hit;
+    // Only cache misses cost D1 reads, so only they count toward the per-IP limit.
+    if (!(await withinLimit(env.PAGE_LIMITER, context.request))) return tooManyRequests();
     const response = await next();
     const copy = cacheableCopy(response);
     if (!copy) return response;
