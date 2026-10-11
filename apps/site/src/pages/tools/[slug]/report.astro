@@ -92,7 +92,10 @@ const button = "inline-flex min-h-11 flex-1 items-center justify-center rounded-
               maxlength={NOTE_MAX}
               class="mt-1 block w-full rounded-lg bg-white px-3 py-2 text-base outline-1 -outline-offset-1 outline-stone-300 focus:outline-2 focus:-outline-offset-2 focus:outline-lime-600 dark:bg-stone-900 dark:outline-stone-700"
             >{note}</textarea>
-            {enabled && <div class="cf-turnstile mt-4" data-sitekey={secrets.TURNSTILE_SITE_KEY} data-theme="auto" />}
+            {
+              // interaction-only: the widget stays hidden unless Turnstile needs the visitor to click.
+              enabled && <div class="cf-turnstile [&:has(iframe)]:mt-4" data-sitekey={secrets.TURNSTILE_SITE_KEY} data-theme="auto" data-appearance="interaction-only" />
+            }
             <div class="mt-6 flex gap-3">
               <a href={back} class={`${button} ring-1 ring-stone-300 ring-inset hover:bg-stone-100 dark:ring-stone-700 dark:hover:bg-stone-800`}>
                 Cancel
