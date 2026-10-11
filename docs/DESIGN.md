@@ -214,11 +214,12 @@ All state lives in one D1 database. Extracted article text is stored in R2, keye
 
 ## Frontend
 
-The site is Astro with the Cloudflare adapter, deployed as a Worker with static assets on the custom domain `slopbucket.app` (no `workers.dev` URL). Pages are server-rendered from D1 and cached at the edge, with the cache cleared after each daily run. That keeps pages fast and indexable without a rebuild per day.
+The site is Astro with the Cloudflare adapter, deployed as a Worker with static assets on the custom domain `slopbucket.app` (no `workers.dev` URL). Pages are server-rendered from D1 and cached at the edge for 5 minutes (the Workers Cache API, in `middleware.ts`; `/admin` and `/api` are never cached). Data changes once a day, so a short TTL keeps pages fresh without purging, and pages stay fast and indexable without a rebuild per day.
 
 | Route | Content |
 | --- | --- |
-| `/` | Trending tools: name, one-line description, category, open or closed badge, stars, post count, latest activity |
+| `/` | Trending tools, 25 per page (`?page=`): rank, avatar, name, one-line description, category, open or closed badge, sources, up to 3 tags, published post count, latest activity, stars and the 7-day star gain (shown once a snapshot at least 7 days old exists). Above the list: the last daily run and three counts (published tools, all stored posts, dropped posts). Only published tools and published posts appear |
+| `/avatar/[owner]` | The GitHub owner's avatar (`github.com/{owner}.png?size=88`), proxied so visitors' browsers never contact GitHub, or an SVG monogram when GitHub has none; cached at the edge. Tools without a repo get a monogram tile in their category's color instead |
 | `/new` | Newest tools by first-seen date |
 | `/tools/[slug]` | Tool page: description, category and tags, homepage and GitHub links, GitHub stats (stars, license, language), and a timeline of posts and releases, newest first, with a "report this" link |
 | `/category/[name]` | Trending within one category |

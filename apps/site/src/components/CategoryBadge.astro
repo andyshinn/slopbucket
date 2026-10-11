@@ -1,0 +1,10 @@
+---
+import { categoryStyle } from "../lib/categories.ts";
+
+interface Props {
+  category: string;
+}
+const style = categoryStyle(Astro.props.category);
+---
+
+<span class={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${style.badge}`}>{style.label}</span>
