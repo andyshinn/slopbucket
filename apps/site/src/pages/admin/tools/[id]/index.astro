@@ -79,9 +79,9 @@ const homepage = safeHref(tool.homepage_url);
   <a href="/admin/tools" class="text-sm font-medium text-brand-700">← All tools</a>
   <div class="mt-2 flex items-start justify-between gap-3">
     <h1 class="text-lg font-semibold break-words">{tool.name}</h1>
-    <span class="shrink-0 rounded-md bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">{tool.status}</span>
+    <span class="shrink-0 rounded-md bg-stone-100 px-2 py-0.5 text-xs font-medium text-stone-700">{tool.status}</span>
   </div>
-  <p class="mt-1 text-sm text-gray-600">
+  <p class="mt-1 text-sm text-stone-600">
     First seen {timeAgo(tool.first_seen_at)} · {tool.postCount} {tool.postCount === 1 ? "post" : "posts"}
     {homepage && <> · <a href={homepage} class="font-medium text-brand-700" target="_blank" rel="noopener noreferrer">Website</a></>}
     {tool.github_repo && <> · <a href={`https://github.com/${tool.github_repo}`} class="font-medium text-brand-700" target="_blank" rel="noopener noreferrer">GitHub</a></>}
@@ -105,11 +105,11 @@ const homepage = safeHref(tool.homepage_url);
       <input id="name" name="name" value={field("name", tool.name)} required class={`${input} mt-1`} autocomplete="off" />
     </div>
     <div>
-      <label for="slug" class={label}>Slug <span class="font-normal text-gray-500">(public URL: /tools/slug)</span></label>
+      <label for="slug" class={label}>Slug <span class="font-normal text-stone-500">(public URL: /tools/slug)</span></label>
       <input id="slug" name="slug" value={field("slug", tool.slug)} required class={`${input} mt-1 font-mono text-sm`} autocomplete="off" autocapitalize="off" />
     </div>
     <div>
-      <label for="description" class={label}>Description <span class="font-normal text-gray-500">(under 140 characters; describe the tool, not a post)</span></label>
+      <label for="description" class={label}>Description <span class="font-normal text-stone-500">(under 140 characters; describe the tool, not a post)</span></label>
       <textarea id="description" name="description" rows="3" maxlength="140" class={`${input} mt-1`}>{field("description", tool.description)}</textarea>
     </div>
     <div>
@@ -122,10 +122,10 @@ const homepage = safeHref(tool.homepage_url);
       <legend class={label}>Tags</legend>
       {tagGroups.map((g) => (
         <div class="mt-2">
-          <p class="text-xs font-medium text-gray-500">{g.label}</p>
+          <p class="text-xs font-medium text-stone-500">{g.label}</p>
           <div class="mt-1 flex flex-wrap gap-2">
             {g.tags.map((t) => (
-              <label class="inline-flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm ring-1 ring-gray-300 ring-inset has-checked:bg-brand-50 has-checked:ring-brand-600">
+              <label class="inline-flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm ring-1 ring-stone-300 ring-inset has-checked:bg-brand-50 has-checked:ring-brand-600">
                 <input type="checkbox" name="tags" value={t.slug} checked={selectedTags.has(t.slug)} class="size-4 accent-brand-600" />
                 {t.label}
               </label>
@@ -139,41 +139,41 @@ const homepage = safeHref(tool.homepage_url);
       <input id="homepage_url" name="homepage_url" type="url" value={field("homepage_url", tool.homepage_url)} class={`${input} mt-1`} autocomplete="off" autocapitalize="off" />
     </div>
     <div>
-      <label for="github_repo" class={label}>GitHub repo <span class="font-normal text-gray-500">(owner/repo)</span></label>
+      <label for="github_repo" class={label}>GitHub repo <span class="font-normal text-stone-500">(owner/repo)</span></label>
       <input id="github_repo" name="github_repo" value={field("github_repo", tool.github_repo)} class={`${input} mt-1 font-mono text-sm`} autocomplete="off" autocapitalize="off" />
     </div>
     <fieldset>
       <legend class={label}>Source</legend>
       <div class="mt-1 grid grid-cols-3 gap-2">
         {[["true", "Open"], ["false", "Closed"], ["", "Unknown"]].map(([value, text]) => (
-          <label class="flex min-h-11 items-center justify-center gap-2 rounded-lg text-sm ring-1 ring-gray-300 ring-inset has-checked:bg-brand-50 has-checked:ring-brand-600">
+          <label class="flex min-h-11 items-center justify-center gap-2 rounded-lg text-sm ring-1 ring-stone-300 ring-inset has-checked:bg-brand-50 has-checked:ring-brand-600">
             <input type="radio" name="is_open_source" value={value} checked={openValue === value} class="size-4 accent-brand-600" />
             {text}
           </label>
         ))}
       </div>
     </fieldset>
-    <p class="text-xs text-gray-500">A new repo, homepage domain or name is also added as an alias, so future posts land here.</p>
+    <p class="text-xs text-stone-500">A new repo, homepage domain or name is also added as an alias, so future posts land here.</p>
     <button type="submit" class={`${btnPrimary} w-full`}>Save changes</button>
   </form>
 
   <section id="aliases" class="mt-6 scroll-mt-28">
     <h2 class="text-lg font-semibold">Aliases</h2>
-    <p class="mt-1 text-sm text-gray-600">New posts with any of these repos, domains or names resolve to this tool.</p>
+    <p class="mt-1 text-sm text-stone-600">New posts with any of these repos, domains or names resolve to this tool.</p>
     {error?.section === "aliases" && <div class="mt-2"><Notice tone="error">{error.message}</Notice></div>}
-    <ul class={`${card} mt-2 divide-y divide-gray-100`}>
-      {tool.aliases.length === 0 && <li class="p-4 text-sm text-gray-600">No aliases.</li>}
+    <ul class={`${card} mt-2 divide-y divide-stone-100`}>
+      {tool.aliases.length === 0 && <li class="p-4 text-sm text-stone-600">No aliases.</li>}
       {tool.aliases.map((a) => (
         <li class="flex items-center justify-between gap-3 py-1 pr-1 pl-4">
           <span class="min-w-0">
-            <span class="mr-2 rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600">{a.kind}</span>
+            <span class="mr-2 rounded bg-stone-100 px-1.5 py-0.5 text-xs font-medium text-stone-600">{a.kind}</span>
             <span class="font-mono text-sm break-all">{a.value}</span>
           </span>
           <form method="post">
             <input type="hidden" name="action" value="remove_alias" />
             <input type="hidden" name="kind" value={a.kind} />
             <input type="hidden" name="value" value={a.value} />
-            <button type="submit" class="flex size-11 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-50 hover:text-red-700" aria-label={`Remove alias ${a.value}`}>
+            <button type="submit" class="flex size-11 items-center justify-center rounded-lg text-stone-400 hover:bg-stone-50 hover:text-red-700" aria-label={`Remove alias ${a.value}`}>
               <Icon name="xMark" />
             </button>
           </form>
@@ -194,13 +194,13 @@ const homepage = safeHref(tool.homepage_url);
 
   <section class="mt-6">
     <h2 class="text-lg font-semibold">Posts</h2>
-    <ul class={`${card} mt-2 divide-y divide-gray-100`}>
-      {tool.posts.length === 0 && <li class="p-4 text-sm text-gray-600">No posts.</li>}
+    <ul class={`${card} mt-2 divide-y divide-stone-100`}>
+      {tool.posts.length === 0 && <li class="p-4 text-sm text-stone-600">No posts.</li>}
       {tool.posts.map((p) => (
         <li class="flex items-center justify-between gap-3 px-4 py-3">
           <span class="min-w-0">
-            <a href={safeHref(p.url) ?? "#"} class="block font-medium break-words text-gray-900 hover:text-brand-700" target="_blank" rel="noopener noreferrer">{p.title}</a>
-            <span class="block text-sm text-gray-500">
+            <a href={safeHref(p.url) ?? "#"} class="block font-medium break-words text-stone-900 hover:text-brand-700" target="_blank" rel="noopener noreferrer">{p.title}</a>
+            <span class="block text-sm text-stone-500">
               {SOURCE_LABELS[p.source] ?? p.source} · {timeAgo(p.posted_at)}{p.post_type && ` · ${p.post_type}`} · {p.status}
             </span>
           </span>
@@ -210,18 +210,18 @@ const homepage = safeHref(tool.homepage_url);
         </li>
       ))}
     </ul>
-    {tool.postCount > tool.posts.length && <p class="mt-2 text-sm text-gray-500">Showing the latest {tool.posts.length} of {tool.postCount}.</p>}
+    {tool.postCount > tool.posts.length && <p class="mt-2 text-sm text-stone-500">Showing the latest {tool.posts.length} of {tool.postCount}.</p>}
   </section>
 
   {merges.length > 0 && (
     <section class="mt-6">
       <h2 class="text-lg font-semibold">Merge history</h2>
-      <ul class={`${card} mt-2 divide-y divide-gray-100`}>
+      <ul class={`${card} mt-2 divide-y divide-stone-100`}>
         {merges.map((m) => (
           <li class="flex items-center justify-between gap-3 px-4 py-3">
             <span class="min-w-0 text-sm">
-              <a href={`/admin/tools/${m.from_tool_id}`} class="font-medium text-gray-900 hover:text-brand-700">{m.from_name}</a>
-              <span class="block text-gray-500">
+              <a href={`/admin/tools/${m.from_tool_id}`} class="font-medium text-stone-900 hover:text-brand-700">{m.from_name}</a>
+              <span class="block text-stone-500">
                 Merged {timeAgo(m.merged_at)} · {m.posts} {m.posts === 1 ? "post" : "posts"}, {m.aliases} {m.aliases === 1 ? "alias" : "aliases"}
               </span>
             </span>
@@ -239,9 +239,9 @@ const homepage = safeHref(tool.homepage_url);
   {!mergedAway && (
     <section class="mt-6">
       <h2 class="text-lg font-semibold">Merge</h2>
-      <p class="mt-1 text-sm text-gray-600">Same tool listed twice? Move this one's posts and aliases into the other.</p>
+      <p class="mt-1 text-sm text-stone-600">Same tool listed twice? Move this one's posts and aliases into the other.</p>
       <a href={`/admin/tools/${id}/merge`} class={`${btnSecondary} mt-2 w-full`}>
-        <Icon name="arrowsRightLeft" class="size-4 text-gray-500" /> Merge into another tool…
+        <Icon name="arrowsRightLeft" class="size-4 text-stone-500" /> Merge into another tool…
       </a>
     </section>
   )}
@@ -249,7 +249,7 @@ const homepage = safeHref(tool.homepage_url);
   {!mergedAway && (
     <section class="mt-6">
       <h2 class="text-lg font-semibold">{tool.status === "hidden" ? "Hidden" : "Hide this tool"}</h2>
-      <p class="mt-1 text-sm text-gray-600">
+      <p class="mt-1 text-sm text-stone-600">
         Hidden tools disappear from public pages. Their posts stay linked, so new posts about them stay hidden too.
       </p>
       <form method="post" class="mt-2">

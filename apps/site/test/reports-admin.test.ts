@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
-import { listReports, openReportCount, reasonLabel, resolveReport } from "../src/lib/reports-admin.ts";
+import { navCounts } from "../src/lib/admin-nav.ts";
+import { listReports, reasonLabel, resolveReport } from "../src/lib/reports-admin.ts";
 
 const db = env.DB;
 beforeEach(async () => {
@@ -15,6 +16,17 @@ async function report(toolId: number, reason: string, createdAt: string, resolve
   return row!.id;
 }
 
+describe("navCounts", () => {
+  it("counts queued posts, visible tools and open reports", async () => {
+    await db.batch([
+      db.prepare("INSERT INTO tools (id, slug, name, status) VALUES (1, 'a', 'A', 'published'), (2, 'b', 'B', 'queued'), (3, 'c', 'C', 'hidden')"),
+      db.prepare("INSERT INTO posts (source, external_id, url, canonical_url, title, posted_at, status, tool_id) VALUES ('hn', '1', 'u', 'u', 't', '2026-10-01', 'queued', 2), ('hn', '2', 'u', 'u', 't', '2026-10-01', 'published', 1)"),
+      db.prepare("INSERT INTO reports (tool_id, reason) VALUES (1, 'spam')"),
+    ]);
+    expect(await navCounts(db)).toEqual({ queue: 1, tools: 2, reports: 1 });
+  });
+});
+
 describe("reports admin", () => {
   it("lists open reports newest first with their tool, resolves once, then lists them as resolved", async () => {
     const tool = (await db.prepare("INSERT INTO tools (slug, name, status) VALUES ('pi', 'Pi', 'published') RETURNING id").first<{ id: number }>())!.id;
@@ -24,12 +36,12 @@ describe("reports admin", () => {
 
     expect((await listReports(db)).map((r) => r.id)).toEqual([newer, older]);
     expect((await listReports(db))[0]).toMatchObject({ tool_name: "Pi", tool_slug: "pi", tool_status: "published", note: "a note" });
-    expect(await openReportCount(db)).toBe(2);
+    expect((await navCounts(db))?.reports).toBe(2);
 
     expect(await resolveReport(db, older)).toBe(true);
     expect(await resolveReport(db, older)).toBe(false);
     expect(await resolveReport(db, 9999)).toBe(false);
-    expect(await openReportCount(db)).toBe(1);
+    expect((await navCounts(db))?.reports).toBe(1);
     const resolved = await listReports(db, true);
     expect(resolved.map((r) => r.id)[0]).toBe(older);
     expect(resolved).toHaveLength(2);

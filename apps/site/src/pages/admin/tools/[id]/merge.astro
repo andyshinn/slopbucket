@@ -43,25 +43,25 @@ const results = !preview && q ? (await searchTools(env.DB, q)).filter((t) => t.i
 <Admin title={`Merge ${tool.name}`} section="tools">
   <a href={`/admin/tools/${id}`} class="text-sm font-medium text-brand-700">← Back to {tool.name}</a>
   <h1 class="mt-2 text-lg font-semibold">Merge {tool.name} into another tool</h1>
-  <p class="mt-1 text-sm text-gray-600">Pick the tool to keep. Everything about {tool.name} moves there.</p>
+  <p class="mt-1 text-sm text-stone-600">Pick the tool to keep. Everything about {tool.name} moves there.</p>
 
   {error && <div class="mt-4"><Notice tone="error">{error}</Notice></div>}
 
   {preview ? (
     <section class={`${card} mt-4 p-4`}>
       <h2 class="font-semibold">What moves to {preview.into.name}</h2>
-      <p class="mt-2 text-sm font-medium text-gray-900">{preview.posts.length} {preview.posts.length === 1 ? "post" : "posts"}</p>
-      <ul class="mt-1 list-disc space-y-0.5 pl-5 text-sm text-gray-700">
+      <p class="mt-2 text-sm font-medium text-stone-900">{preview.posts.length} {preview.posts.length === 1 ? "post" : "posts"}</p>
+      <ul class="mt-1 list-disc space-y-0.5 pl-5 text-sm text-stone-700">
         {preview.posts.slice(0, 10).map((p) => <li class="break-words">{p.title}</li>)}
         {preview.posts.length > 10 && <li>and {preview.posts.length - 10} more</li>}
       </ul>
-      <p class="mt-3 text-sm font-medium text-gray-900">{preview.aliases.length} {preview.aliases.length === 1 ? "alias" : "aliases"}</p>
+      <p class="mt-3 text-sm font-medium text-stone-900">{preview.aliases.length} {preview.aliases.length === 1 ? "alias" : "aliases"}</p>
       <ul class="mt-1 flex flex-wrap gap-1.5">
         {preview.aliases.map((a) => (
-          <li class="rounded-md bg-gray-50 px-2 py-0.5 font-mono text-xs text-gray-700 ring-1 ring-gray-200 ring-inset">{a.kind}: {a.value}</li>
+          <li class="rounded-md bg-stone-50 px-2 py-0.5 font-mono text-xs text-stone-700 ring-1 ring-stone-200 ring-inset">{a.kind}: {a.value}</li>
         ))}
       </ul>
-      <p class="mt-3 text-sm text-gray-600">
+      <p class="mt-3 text-sm text-stone-600">
         {preview.from.name} is hidden, and its public page will redirect to {preview.into.name}. You can undo this later with Split on {preview.into.name}'s page.
       </p>
       <form method="post" class="mt-4 grid grid-cols-2 gap-3">
@@ -76,18 +76,18 @@ const results = !preview && q ? (await searchTools(env.DB, q)).filter((t) => t.i
         <input type="search" name="q" value={q} placeholder="Search tools" aria-label="Search tools" class={input} autocomplete="off" autocapitalize="off" />
         <button type="submit" class={btnPrimary} aria-label="Search"><Icon name="magnifyingGlass" /></button>
       </form>
-      <ul class={`${card} mt-4 divide-y divide-gray-100`}>
-        {results.length === 0 && <li class="p-4 text-sm text-gray-600">{q ? "No other tools match." : "Search by name, description or tag."}</li>}
+      <ul class={`${card} mt-4 divide-y divide-stone-100`}>
+        {results.length === 0 && <li class="p-4 text-sm text-stone-600">{q ? "No other tools match." : "Search by name, description or tag."}</li>}
         {results.map((t) => (
           <li>
-            <a href={`/admin/tools/${id}/merge?into=${t.id}`} class="flex min-h-14 items-center justify-between gap-3 px-4 py-3 hover:bg-gray-50">
+            <a href={`/admin/tools/${id}/merge?into=${t.id}`} class="flex min-h-14 items-center justify-between gap-3 px-4 py-3 hover:bg-stone-50">
               <span>
-                <span class="block font-medium text-gray-900">{t.name}</span>
-                <span class="block text-sm text-gray-500">
+                <span class="block font-medium text-stone-900">{t.name}</span>
+                <span class="block text-sm text-stone-500">
                   {t.category ?? "uncategorized"} · {t.posts} {t.posts === 1 ? "post" : "posts"} · {t.status}
                 </span>
               </span>
-              <Icon name="arrowsRightLeft" class="size-5 shrink-0 text-gray-400" />
+              <Icon name="arrowsRightLeft" class="size-5 shrink-0 text-stone-400" />
             </a>
           </li>
         ))}

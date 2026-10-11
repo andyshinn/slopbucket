@@ -7,11 +7,11 @@ export const accentLink = "font-medium text-lime-700 underline underline-offset-
 export const btnPrimary = `${btn} ${accentFill} hover:bg-lime-300 focus-visible:outline-lime-600`;
 export const btnApprove = `${btn} ${accentFill} hover:bg-lime-300 focus-visible:outline-lime-600`;
 export const btnReject = `${btn} bg-white text-red-700 ring-1 ring-red-300 ring-inset hover:bg-red-50 focus-visible:outline-red-600`;
-export const btnSecondary = `${btn} bg-white text-gray-900 ring-1 ring-gray-300 ring-inset hover:bg-gray-50 focus-visible:outline-gray-600`;
+export const btnSecondary = `${btn} bg-white text-stone-900 ring-1 ring-stone-300 ring-inset hover:bg-stone-50 focus-visible:outline-stone-600`;
 export const input =
-  "block w-full rounded-lg bg-white px-3 py-2.5 text-base text-gray-900 outline-1 -outline-offset-1 outline-gray-300 placeholder:text-gray-400 focus:outline-2 focus:-outline-offset-2 focus:outline-brand-600";
-export const label = "block text-sm font-medium text-gray-900";
-export const card = "rounded-xl bg-white shadow-xs ring-1 ring-gray-200";
+  "block w-full rounded-lg bg-white px-3 py-2.5 text-base text-stone-900 outline-1 -outline-offset-1 outline-stone-300 placeholder:text-stone-400 focus:outline-2 focus:-outline-offset-2 focus:outline-brand-600";
+export const label = "block text-sm font-medium text-stone-900";
+export const card = "rounded-xl bg-white shadow-xs ring-1 ring-stone-200";
 
 export const SOURCE_LABELS: Record<string, string> = { hn: "Hacker News", lobsters: "lobste.rs", github: "GitHub", producthunt: "Product Hunt" };
 
