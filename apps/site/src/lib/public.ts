@@ -1,6 +1,8 @@
 // Read-only queries and formatting for the public pages. Public pages show
 // published tools and published posts only, and never confidence.
 
+import { isGithubLogin } from "./avatar.ts";
+
 export const PAGE_SIZE = 25;
 
 export interface ToolRow {
@@ -92,10 +94,13 @@ export async function homeStats(db: D1Database): Promise<HomeStats> {
   return row ?? { tools: 0, postsRead: 0, tossed: 0, lastRun: null };
 }
 
-/** The page number from a `page` query parameter: a positive integer, else 1. */
+/** Pages beyond this are treated as page 1 (keeps OFFSET a small integer). */
+const MAX_PAGE = 10_000;
+
+/** The page number from a `page` query parameter: an integer from 1 to MAX_PAGE, else 1. */
 export function pageParam(value: string | null): number {
   const n = Number(value);
-  return Number.isInteger(n) && n >= 1 ? n : 1;
+  return Number.isSafeInteger(n) && n >= 1 && n <= MAX_PAGE ? n : 1;
 }
 
 /** 6.6k, 12k, 1.2M; small numbers as they are. */
@@ -123,6 +128,7 @@ export function runTime(iso: string): string {
 
 /** The repo owner, for the avatar route; null unless `repo` is "owner/name". */
 export function repoOwner(repo: string | null): string | null {
-  const m = repo?.match(/^([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))\/[\w.-]+$/);
-  return m ? m[1]!.toLowerCase() : null;
+  const [owner, name, ...rest] = repo?.split("/") ?? [];
+  if (!owner || !name || rest.length > 0 || !/^[\w.-]+$/.test(name) || !isGithubLogin(owner)) return null;
+  return owner.toLowerCase();
 }

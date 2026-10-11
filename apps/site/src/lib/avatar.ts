@@ -12,22 +12,32 @@ export function monogramSvg(name: string): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="88" height="88" viewBox="0 0 88 88"><rect width="88" height="88" fill="#e7e5e4"/><text x="44" y="58" font-family="ui-sans-serif, system-ui, sans-serif" font-size="40" font-weight="600" text-anchor="middle" fill="#44403c">${letter}</text></svg>`;
 }
 
-/** The owner's avatar from GitHub, or a monogram when GitHub has none or fails. */
+/**
+ * The owner's avatar from GitHub, or a monogram when GitHub has none. A monogram
+ * served because GitHub failed (network error, timeout, 5xx) is `no-store`, so a
+ * GitHub outage doesn't pin monograms at the edge.
+ */
 export async function avatarResponse(owner: string, fetcher: typeof fetch = fetch): Promise<Response> {
+  let transient = false;
   if (isGithubLogin(owner)) {
     try {
-      const upstream = await fetcher(`https://github.com/${owner}.png?size=88`, { redirect: "follow" });
+      const upstream = await fetcher(`https://github.com/${owner}.png?size=88`, { redirect: "follow", signal: AbortSignal.timeout(3000) });
       const type = upstream.headers.get("content-type")?.split(";")[0]?.trim() ?? "";
       if (upstream.ok && IMAGE_TYPES.includes(type)) {
         return new Response(upstream.body, {
           headers: { "content-type": type, "cache-control": `public, max-age=${DAY}, s-maxage=${7 * DAY}`, "x-content-type-options": "nosniff" },
         });
       }
+      transient = upstream.status >= 500;
     } catch {
-      // Fall through to the monogram.
+      transient = true;
     }
   }
   return new Response(monogramSvg(owner), {
-    headers: { "content-type": "image/svg+xml", "cache-control": `public, max-age=3600, s-maxage=${DAY}`, "x-content-type-options": "nosniff" },
+    headers: {
+      "content-type": "image/svg+xml",
+      "cache-control": transient ? "no-store" : `public, max-age=3600, s-maxage=${DAY}`,
+      "x-content-type-options": "nosniff",
+    },
   });
 }

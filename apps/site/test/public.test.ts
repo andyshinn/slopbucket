@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
 import { avatarResponse, isGithubLogin, monogramSvg } from "../src/lib/avatar.ts";
-import { cacheableCopy, isCacheablePath } from "../src/lib/edge-cache.ts";
+import { cacheableCopy, isCacheablePath, pageCacheKey } from "../src/lib/edge-cache.ts";
 import { PAGE_SIZE, compactNumber, dayAgo, homeStats, pageParam, repoOwner, trendingTools } from "../src/lib/public.ts";
 
 const db = env.DB;
@@ -84,7 +84,7 @@ describe("homeStats", () => {
 
 describe("formatting", () => {
   it("parses page numbers", () => {
-    expect([pageParam(null), pageParam("3"), pageParam("0"), pageParam("-2"), pageParam("1.5"), pageParam("x")]).toEqual([1, 3, 1, 1, 1, 1]);
+    expect([pageParam(null), pageParam("3"), pageParam("0"), pageParam("-2"), pageParam("1.5"), pageParam("x"), pageParam("1e308"), pageParam("10001")]).toEqual([1, 3, 1, 1, 1, 1, 1, 1]);
   });
 
   it("shortens counts and dates", () => {
@@ -100,6 +100,8 @@ describe("formatting", () => {
     expect(repoOwner("Anthropics/claude-code")).toBe("anthropics");
     expect(repoOwner("https://github.com/a/b")).toBeNull();
     expect(repoOwner("../x/y")).toBeNull();
+    expect(repoOwner("foo-/bar")).toBeNull();
+    expect(repoOwner("a--b/bar")).toBeNull();
     expect(repoOwner(null)).toBeNull();
   });
 });
@@ -119,12 +121,15 @@ describe("avatars", () => {
     expect(await ok.text()).toBe("PNG");
 
     const html = (async () => new Response("<html>", { headers: { "content-type": "text/html" } })) as typeof fetch;
+    const missing = (async () => new Response("", { status: 404 })) as typeof fetch;
+    const down = (async () => new Response("", { status: 503 })) as typeof fetch;
     const failing = (async () => {
       throw new Error("offline");
     }) as typeof fetch;
-    for (const fetcher of [html, failing]) {
+    for (const [fetcher, cached] of [[html, true], [missing, true], [down, false], [failing, false]] as const) {
       const res = await avatarResponse("acme", fetcher);
       expect(res.headers.get("content-type")).toBe("image/svg+xml");
+      expect(res.headers.get("cache-control") !== "no-store").toBe(cached);
       expect(await res.text()).toContain(">A</text>");
     }
     let called = false;
@@ -142,6 +147,14 @@ describe("edge cache", () => {
     expect(isCacheablePath("GET", "/admin/queue")).toBe(false);
     expect(isCacheablePath("GET", "/api/health")).toBe(false);
     expect(isCacheablePath("GET", "/administer")).toBe(true);
+    expect(isCacheablePath("GET", "/avatar/acme")).toBe(false);
+  });
+
+  it("keys pages by path and the parameters they read", () => {
+    const key = (u: string) => pageCacheKey(new URL(u)).url;
+    expect(key("https://slopbucket.app/?utm_source=x&page=2")).toBe("https://slopbucket.app/?page=2");
+    expect(key("https://slopbucket.app/?a=1")).toBe("https://slopbucket.app/");
+    expect(key("https://slopbucket.app/about?b=2#ranking")).toBe("https://slopbucket.app/about");
   });
 
   it("marks successful HTML responses cacheable and leaves others alone", () => {
