@@ -10,11 +10,11 @@ describe("categoryDisplay", () => {
     const hues = v3.map((s) => categoryDisplay(s).hue);
     expect(new Set(hues).size).toBe(hues.length);
     expect(hues).not.toContain("stone");
-    expect(categoryDisplay("other")).toEqual({ slug: "other", label: "Other", hue: "stone" });
+    expect(categoryDisplay("other")).toMatchObject({ slug: "other", label: "Other", hue: "stone" });
   });
 
   it("falls back to the capitalized slug in stone for categories added from settings", () => {
-    expect(categoryDisplay("data-tools")).toEqual({ slug: "data-tools", label: "Data tools", hue: "stone" });
+    expect(categoryDisplay("data-tools")).toEqual({ slug: "data-tools", label: "Data tools", hue: "stone", blurb: "" });
     expect(categoryDisplay("toString").hue).toBe("stone");
   });
 });

@@ -1,0 +1,34 @@
+---
+import { env } from "cloudflare:workers";
+import BrowseList from "../components/BrowseList.astro";
+import Public from "../layouts/Public.astro";
+import { loadBrowsePage } from "../lib/browse.ts";
+
+const page = await loadBrowsePage(env.DB, Astro.url, "/search", "trending");
+if (page.redirect) return Astro.redirect(page.redirect, 302);
+const { q } = page.filters;
+const total = page.result.total;
+---
+
+<Public title={q ? `“${q}” · Slop Bucket` : "Search · Slop Bucket"} description="Search every AI dev tool in the bucket." query={q}>
+  <div class="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-12">
+    <div class="mb-6">
+      <h1 class="text-4xl font-bold tracking-tight">
+        {q ? `${total.toLocaleString("en")} ${total === 1 ? "tool matches" : "tools match"} “${q}”` : "Search the bucket"}
+      </h1>
+      <form method="get" action="/search" role="search" class="mt-4 flex max-w-xl gap-2 md:hidden">
+        <label for="search-page-q" class="sr-only">Search tools</label>
+        <input
+          id="search-page-q"
+          name="q"
+          type="search"
+          value={q}
+          placeholder="Search tools"
+          class="block h-11 min-w-0 flex-1 rounded-lg bg-white px-3 text-base text-stone-900 outline-1 -outline-offset-1 outline-stone-300 placeholder:text-stone-500 focus:outline-2 focus:-outline-offset-2 focus:outline-lime-600 dark:bg-stone-900 dark:text-stone-50 dark:outline-stone-700 dark:placeholder:text-stone-400 dark:focus:outline-lime-400"
+        />
+        <button type="submit" class="rounded-lg bg-lime-400 px-4 text-sm font-semibold text-lime-950 hover:bg-lime-300">Search</button>
+      </form>
+    </div>
+    <BrowseList base="/search" defaultSort="trending" {...page} />
+  </div>
+</Public>

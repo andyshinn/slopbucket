@@ -1,0 +1,30 @@
+---
+import { getSetting } from "@slop-bucket/core";
+import { env } from "cloudflare:workers";
+import BrowseList from "../../components/BrowseList.astro";
+import Public from "../../layouts/Public.astro";
+import { loadBrowsePage } from "../../lib/browse.ts";
+import { categoryStyle } from "../../lib/categories.ts";
+
+const name = Astro.params.name ?? "";
+const categories = await getSetting(env.DB, "categories");
+if (!categories.includes(name)) return new Response("Not found", { status: 404 });
+
+const base = `/category/${name}`;
+const page = await loadBrowsePage(env.DB, Astro.url, base, "trending", name);
+if (page.redirect) return Astro.redirect(page.redirect, 302);
+const c = categoryStyle(name);
+---
+
+<Public title={`${c.label} · Slop Bucket`} description={c.blurb || `${c.label} tools in the bucket.`} nav="categories">
+  <div class="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-12">
+    <div class="mb-8">
+      <p class="flex items-center gap-2 font-mono text-xs tracking-widest text-stone-500 uppercase dark:text-stone-400">
+        <span class={`size-2 rounded-full ${c.dot}`} aria-hidden="true"></span> Category
+      </p>
+      <h1 class="mt-2 text-4xl font-bold tracking-tight">{c.label}</h1>
+      {c.blurb && <p class="mt-2 text-stone-600 dark:text-stone-300">{c.blurb}</p>}
+    </div>
+    <BrowseList base={base} defaultSort="trending" fixedCategory={name} {...page} />
+  </div>
+</Public>

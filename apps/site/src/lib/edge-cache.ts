@@ -11,7 +11,8 @@ export const PAGE_TTL = 300;
  * (utm_*, typos) is dropped from the cache key, so it can't create extra cache
  * entries or D1 reads. A page that reads a new parameter must add it here.
  */
-export const PAGE_PARAMS = ["page"];
+// Must match what lib/browse.ts parseFilters reads.
+export const PAGE_PARAMS = ["q", "category", "tag", "license", "stars", "lang", "seen", "sort", "page"];
 
 /** GET requests for public HTML pages; never /admin or /api, and not /avatar, which caches itself. */
 export function isCacheablePath(method: string, pathname: string): boolean {

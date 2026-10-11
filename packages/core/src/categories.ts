@@ -6,22 +6,22 @@
 export type CategoryHue =
   | "violet" | "indigo" | "sky" | "rose" | "orange" | "cyan" | "blue" | "amber" | "teal" | "pink" | "stone";
 
-const CATEGORY_DISPLAY: Record<string, { label: string; hue: CategoryHue }> = {
-  agent: { label: "Agent", hue: "violet" },
-  "agent-addon": { label: "Agent add-on", hue: "indigo" },
-  "agent-tools": { label: "Agent tools", hue: "sky" },
-  "agent-security": { label: "Agent security", hue: "rose" },
-  "review-testing": { label: "Review & testing", hue: "orange" },
-  "memory-context": { label: "Memory & context", hue: "cyan" },
-  ide: { label: "IDE", hue: "blue" },
-  cli: { label: "CLI", hue: "amber" },
-  "mcp-dev": { label: "MCP · dev", hue: "teal" },
-  "mcp-general": { label: "MCP · general", hue: "pink" },
-  other: { label: "Other", hue: "stone" },
+const CATEGORY_DISPLAY: Record<string, { label: string; hue: CategoryHue; blurb: string }> = {
+  agent: { label: "Agent", hue: "violet", blurb: "Coding agents that plan and make changes on their own." },
+  "agent-addon": { label: "Agent add-on", hue: "indigo", blurb: "Plugins, skills, hooks, status lines and rule packs you install into a coding agent." },
+  "agent-tools": { label: "Agent tools", hue: "sky", blurb: "Tools that run alongside coding agents: parallel runs, dashboards, cost tracking, sandboxes." },
+  "agent-security": { label: "Agent security", hue: "rose", blurb: "Guardrails, command blocking, secret scanning and audit trails for coding agents." },
+  "review-testing": { label: "Review & testing", hue: "orange", blurb: "AI code review, test generation, and checking what the AI wrote." },
+  "memory-context": { label: "Memory & context", hue: "cyan", blurb: "Memory, codebase indexes and context trimming for coding agents." },
+  ide: { label: "IDE", hue: "blue", blurb: "AI editors and editor extensions." },
+  cli: { label: "CLI", hue: "amber", blurb: "AI command-line tools that fit nowhere more specific." },
+  "mcp-dev": { label: "MCP · dev", hue: "teal", blurb: "MCP servers for software development." },
+  "mcp-general": { label: "MCP · general", hue: "pink", blurb: "MCP servers for everything else." },
+  other: { label: "Other", hue: "stone", blurb: "AI dev tools that fit no other category yet." },
 };
 
-export function categoryDisplay(slug: string): { slug: string; label: string; hue: CategoryHue } {
+export function categoryDisplay(slug: string): { slug: string; label: string; hue: CategoryHue; blurb: string } {
   const known = Object.hasOwn(CATEGORY_DISPLAY, slug) ? CATEGORY_DISPLAY[slug] : undefined;
   const fallback = slug.charAt(0).toUpperCase() + slug.slice(1).replace(/-/g, " ");
-  return { slug, label: known?.label ?? fallback, hue: known?.hue ?? "stone" };
+  return { slug, label: known?.label ?? fallback, hue: known?.hue ?? "stone", blurb: known?.blurb ?? "" };
 }

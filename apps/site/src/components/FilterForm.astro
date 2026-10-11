@@ -1,0 +1,182 @@
+---
+import type { TagGroups } from "@slop-bucket/core";
+import { type Facets, type Filters, SEEN_DAYS, STAR_STEPS, type Sort, compactStep, filterParams } from "../lib/browse.ts";
+import { categoryStyle } from "../lib/categories.ts";
+
+// The filter form, rendered twice: in the desktop sidebar and in the phone dialog.
+// A GET form, so the filter state lives in the URL.
+interface Props {
+  /** Prefix for element ids, unique per copy on the page. */
+  idPrefix: string;
+  action: string;
+  filters: Filters;
+  defaultSort: Sort;
+  facets: Facets;
+  groups: TagGroups;
+  categories: string[];
+  /** On /category/[name] the category is the page, not a filter. */
+  hideCategories?: boolean;
+  /** Phone dialog: 44px rows and a pinned footer. */
+  large?: boolean;
+}
+const { idPrefix, action, filters: f, defaultSort, facets, groups, categories, hideCategories = false, large = false } = Astro.props;
+
+// Keep the query and a non-default sort across filter changes.
+const kept = [...filterParams({ ...f, page: 1 }, defaultSort)].filter(([k]) => k === "q" || k === "sort");
+const SHOWN_TAGS = 6;
+const row = `flex items-center gap-3 rounded-lg px-2 text-sm hover:bg-stone-100 dark:hover:bg-stone-800 ${large ? "min-h-11" : "min-h-9"}`;
+const box = `shrink-0 rounded border-stone-300 accent-lime-600 dark:border-stone-700 ${large ? "size-5" : "size-4"}`;
+const legend = "font-mono text-xs tracking-widest text-stone-500 uppercase dark:text-stone-400";
+const count = "ml-auto font-mono text-xs text-stone-500 tabular-nums dark:text-stone-400";
+const dim = (n: number, checked: boolean) => (n === 0 && !checked ? "opacity-50" : "");
+const pill = `flex cursor-pointer items-center justify-center rounded-full px-3 text-sm ring-1 ring-stone-300 ring-inset has-checked:bg-lime-400 has-checked:font-semibold has-checked:text-lime-950 has-checked:ring-lime-400 has-focus-visible:outline-2 has-focus-visible:outline-lime-600 dark:ring-stone-700 ${large ? "min-h-11" : "min-h-8"}`;
+
+const tagGroups = groups.map((g) => {
+  const tags = g.tags
+    .map((t) => ({ ...t, n: facets.tags.get(t.slug) ?? 0, checked: f.tags.includes(t.slug) }))
+    .sort((a, b) => Number(b.checked) - Number(a.checked) || b.n - a.n);
+  return { ...g, shown: tags.slice(0, SHOWN_TAGS), more: tags.slice(SHOWN_TAGS) };
+});
+const langs = [...facets.langs];
+for (const l of f.langs) if (!langs.some(([k]) => k === l)) langs.push([l, 0]);
+---
+
+<form method="get" action={action} id={`${idPrefix}-form`} class="space-y-6" data-autosubmit={large ? undefined : ""}>
+  {kept.map(([k, v]) => <input type="hidden" name={k} value={v} />)}
+
+  <fieldset>
+    <legend class={legend}>License</legend>
+    <div class="mt-2 grid grid-cols-3 gap-1 rounded-full bg-stone-100 p-1 dark:bg-stone-800">
+      {
+        [
+          ["", "Any"],
+          ["open", "Open"],
+          ["closed", "Closed"],
+        ].map(([value, label]) => (
+          <label class={`${pill} ring-0`}>
+            <input type="radio" name="license" value={value} checked={f.license === value} class="sr-only" />
+            {label}
+          </label>
+        ))
+      }
+    </div>
+  </fieldset>
+
+  {
+    !hideCategories && (
+      <fieldset>
+        <legend class={legend}>Category</legend>
+        <div class="mt-2">
+          {categories.map((slug) => {
+            const c = categoryStyle(slug);
+            const n = facets.categories.get(slug) ?? 0;
+            const checked = f.categories.includes(slug);
+            return (
+              <label class={`${row} ${dim(n, checked)}`}>
+                <input type="checkbox" name="category" value={slug} checked={checked} class={box} />
+                <span class={`size-2 shrink-0 rounded-full ${c.dot}`} aria-hidden="true" />
+                {c.label}
+                <span class={count}>{n}</span>
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
+    )
+  }
+
+  {
+    tagGroups.map((g) => (
+      <fieldset>
+        <legend class={legend}>{g.label}</legend>
+        <div class="mt-2">
+          {g.shown.map((t) => (
+            <label class={`${row} ${dim(t.n, t.checked)}`}>
+              <input type="checkbox" name="tag" value={t.slug} checked={t.checked} class={box} />
+              {t.label}
+              <span class={count}>{t.n}</span>
+            </label>
+          ))}
+          {g.more.length > 0 && (
+            <details class="group">
+              <summary class={`${row} cursor-pointer list-none font-medium text-lime-700 dark:text-lime-400 [&::-webkit-details-marker]:hidden`}>
+                <span class="group-open:hidden">Show {g.more.length} more</span>
+                <span class="hidden group-open:inline">Show fewer</span>
+              </summary>
+              {g.more.map((t) => (
+                <label class={`${row} ${dim(t.n, t.checked)}`}>
+                  <input type="checkbox" name="tag" value={t.slug} checked={t.checked} class={box} />
+                  {t.label}
+                  <span class={count}>{t.n}</span>
+                </label>
+              ))}
+            </details>
+          )}
+        </div>
+      </fieldset>
+    ))
+  }
+
+  <fieldset>
+    <legend class={legend}>GitHub stars</legend>
+    <div class="mt-2 flex flex-wrap gap-2">
+      <label class={pill}><input type="radio" name="stars" value="" checked={!f.stars} class="sr-only" />Any</label>
+      {
+        STAR_STEPS.map((s) => (
+          <label class={`${pill} ${dim(facets.stars.get(s) ?? 0, f.stars === s)}`}>
+            <input type="radio" name="stars" value={s} checked={f.stars === s} class="sr-only" />
+            {compactStep(s)}+
+          </label>
+        ))
+      }
+    </div>
+  </fieldset>
+
+  <details open={f.langs.length > 0 || undefined} class="group">
+    <summary class={`${legend} flex cursor-pointer list-none items-center justify-between [&::-webkit-details-marker]:hidden`}>
+      Language <span aria-hidden="true" class="group-open:rotate-180">▾</span>
+    </summary>
+    <div class="mt-2">
+      {langs.length === 0 && <p class="px-2 text-sm text-stone-500 dark:text-stone-400">No repos with a known language here.</p>}
+      {
+        langs.map(([lang, n]) => {
+          const checked = f.langs.includes(lang);
+          return (
+            <label class={`${row} ${dim(n, checked)}`}>
+              <input type="checkbox" name="lang" value={lang} checked={checked} class={box} />
+              {lang}
+              <span class={count}>{n}</span>
+            </label>
+          );
+        })
+      }
+    </div>
+  </details>
+
+  <details open={f.seen > 0 || undefined} class="group">
+    <summary class={`${legend} flex cursor-pointer list-none items-center justify-between [&::-webkit-details-marker]:hidden`}>
+      First seen <span aria-hidden="true" class="group-open:rotate-180">▾</span>
+    </summary>
+    <div class="mt-2">
+      <label class={row}><input type="radio" name="seen" value="" checked={!f.seen} class={box} />Any time</label>
+      {
+        SEEN_DAYS.map((d) => (
+          <label class={`${row} ${dim(facets.seen.get(d) ?? 0, f.seen === d)}`}>
+            <input type="radio" name="seen" value={d} checked={f.seen === d} class={box} />
+            Last {d} days
+            <span class={count}>{facets.seen.get(d) ?? 0}</span>
+          </label>
+        ))
+      }
+    </div>
+  </details>
+
+  {
+    !large && (
+      <button type="submit" class="w-full rounded-lg bg-lime-400 px-4 py-2 text-sm font-semibold text-lime-950 hover:bg-lime-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime-600" data-autosubmit-hide>
+        Apply filters
+      </button>
+    )
+  }
+  <slot />
+</form>

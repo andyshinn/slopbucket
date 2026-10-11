@@ -26,7 +26,7 @@ export interface ToolRow {
   stars_gained_7d: number | null;
 }
 
-interface RawRow extends Omit<ToolRow, "tags" | "sources" | "is_open_source" | "stars_gained_7d"> {
+export interface RawRow extends Omit<ToolRow, "tags" | "sources" | "is_open_source" | "stars_gained_7d"> {
   tags: string;
   sources: string | null;
   is_open_source: number | null;
@@ -34,7 +34,8 @@ interface RawRow extends Omit<ToolRow, "tags" | "sources" | "is_open_source" | "
 }
 
 const PUBLISHED_POSTS = "FROM posts p WHERE p.tool_id = t.id AND p.status = 'published'";
-const ROW_SELECT = `SELECT t.id, t.slug, t.name, t.description, coalesce(t.category, 'other') AS category, t.tags, t.github_repo, t.is_open_source,
+/** Columns of a ToolRow, selected FROM tools t (callers add joins and WHERE). */
+export const ROW_SELECT = `SELECT t.id, t.slug, t.name, t.description, coalesce(t.category, 'other') AS category, t.tags, t.github_repo, t.is_open_source,
   (SELECT count(*) ${PUBLISHED_POSTS}) AS posts,
   (SELECT group_concat(DISTINCT p.source) ${PUBLISHED_POSTS}) AS sources,
   (SELECT max(p.posted_at) ${PUBLISHED_POSTS}) AS last_posted_at,
@@ -42,7 +43,7 @@ const ROW_SELECT = `SELECT t.id, t.slug, t.name, t.description, coalesce(t.categ
   (SELECT r.stars FROM repo_snapshots r WHERE r.tool_id = t.id AND r.date <= date('now', '-7 days') ORDER BY r.date DESC LIMIT 1) AS stars_week_ago
   FROM tools t`;
 
-function toRow(raw: RawRow): ToolRow {
+export function toRow(raw: RawRow): ToolRow {
   let tags: string[] = [];
   try {
     const parsed: unknown = JSON.parse(raw.tags);
@@ -58,17 +59,6 @@ function toRow(raw: RawRow): ToolRow {
     is_open_source: raw.is_open_source === null ? null : raw.is_open_source === 1,
     stars_gained_7d: raw.stars !== null && stars_week_ago !== null ? raw.stars - stars_week_ago : null,
   };
-}
-
-/** One page of published tools, highest trending score first. */
-export async function trendingTools(db: D1Database, page: number): Promise<{ tools: ToolRow[]; total: number }> {
-  const [list, count] = await db.batch<RawRow | { n: number }>([
-    db
-      .prepare(`${ROW_SELECT} WHERE t.status = 'published' ORDER BY t.trending_score DESC, t.id LIMIT ? OFFSET ?`)
-      .bind(PAGE_SIZE, (page - 1) * PAGE_SIZE),
-    db.prepare("SELECT count(*) AS n FROM tools WHERE status = 'published'"),
-  ]);
-  return { tools: (list!.results as RawRow[]).map(toRow), total: (count!.results[0] as { n: number }).n };
 }
 
 export interface HomeStats {

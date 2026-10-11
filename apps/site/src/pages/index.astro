@@ -1,36 +1,28 @@
 ---
-import { getSetting } from "@slop-bucket/core";
 import { env } from "cloudflare:workers";
-import ToolRow from "../components/ToolRow.astro";
+import BrowseList from "../components/BrowseList.astro";
 import Public from "../layouts/Public.astro";
-import { PAGE_SIZE, compactNumber, homeStats, pageParam, runTime, trendingTools } from "../lib/public.ts";
+import { loadBrowsePage } from "../lib/browse.ts";
+import { compactNumber, homeStats, runTime } from "../lib/public.ts";
 
-const page = pageParam(Astro.url.searchParams.get("page"));
-const [{ tools, total }, stats, tagGroups] = await Promise.all([trendingTools(env.DB, page), homeStats(env.DB), getSetting(env.DB, "tags")]);
-const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
-if (page > lastPage) return Astro.redirect(lastPage === 1 ? "/" : `/?page=${lastPage}`, 302);
+const [page, stats] = await Promise.all([loadBrowsePage(env.DB, Astro.url, "/", "trending"), homeStats(env.DB)]);
+if (page.redirect) return Astro.redirect(page.redirect, 302);
 
-const tagLabels = new Map(tagGroups.flatMap((g) => g.tags.map((t) => [t.slug, t.label] as const)));
-const first = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
-const last = Math.min(page * PAGE_SIZE, total);
-const pageHref = (n: number) => (n === 1 ? "/" : `/?page=${n}`);
 const statItems = [
   { label: "In the bucket", value: stats.tools, muted: false },
   { label: "Posts read", value: stats.postsRead, muted: false },
   { label: "Tossed out", value: stats.tossed, muted: true },
 ];
-const pagerLink =
-  "inline-flex min-h-11 items-center rounded-lg px-4 text-sm font-semibold ring-1 ring-stone-300 ring-inset hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime-600 dark:ring-stone-700 dark:hover:bg-stone-800 dark:focus-visible:outline-lime-400";
 ---
 
 <Public title="Slop Bucket: trending AI dev tools" description="Every AI dev tool the internet posted about, ranked by who's talking about it." nav="trending">
-  <div class="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-12">
-    <div class="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
+  <div class="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-12">
+    <div class="mb-10 flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
       <div>
         {
           stats.lastRun && (
             <p class="flex items-center gap-2 font-mono text-xs tracking-widest text-stone-500 uppercase dark:text-stone-400">
-              <span class="size-2 rounded-full bg-lime-400" aria-hidden="true" />
+              <span class="size-2 shrink-0 rounded-full bg-lime-400" aria-hidden="true" />
               Updated daily · last run {runTime(stats.lastRun)}
             </p>
           )
@@ -53,49 +45,6 @@ const pagerLink =
         }
       </dl>
     </div>
-
-    <section class="mt-10" aria-labelledby="list-heading">
-      <h2 id="list-heading" class="text-sm text-stone-600 dark:text-stone-300">
-        <span class="font-semibold text-stone-900 dark:text-stone-50">{total.toLocaleString("en")} {total === 1 ? "tool" : "tools"}</span>, ranked by sources, chatter and star
-        growth. <a href="/about#ranking" class="font-medium text-lime-700 hover:underline dark:text-lime-400">How ranking works</a>
-      </h2>
-
-      {
-        tools.length > 0 ? (
-          <ol class="mt-4 divide-y divide-stone-200 overflow-hidden rounded-xl bg-white shadow-xs ring-1 ring-stone-200 dark:divide-stone-800 dark:bg-stone-900 dark:ring-stone-800">
-            {tools.map((tool, i) => (
-              <ToolRow tool={tool} rank={first + i} tagLabels={tagLabels} />
-            ))}
-          </ol>
-        ) : (
-          <div class="mt-4 rounded-xl bg-white px-6 py-12 text-center ring-1 ring-stone-200 dark:bg-stone-900 dark:ring-stone-800">
-            <p class="font-semibold">The bucket is empty.</p>
-            <p class="mt-1 text-stone-600 dark:text-stone-300">Nothing has made it through review yet. Check back after the next run.</p>
-          </div>
-        )
-      }
-
-      {
-        total > PAGE_SIZE && (
-          <nav class="mt-6 flex items-center justify-between gap-4" aria-label="Pagination">
-            <p class="font-mono text-xs text-stone-500 tabular-nums dark:text-stone-400">
-              {first}–{last} of {total.toLocaleString("en")}
-            </p>
-            <div class="flex gap-2">
-              {page > 1 && (
-                <a href={pageHref(page - 1)} rel="prev" class={pagerLink}>
-                  Previous
-                </a>
-              )}
-              {page < lastPage && (
-                <a href={pageHref(page + 1)} rel="next" class={pagerLink}>
-                  Next page
-                </a>
-              )}
-            </div>
-          </nav>
-        )
-      }
-    </section>
+    <BrowseList base="/" defaultSort="trending" {...page} />
   </div>
 </Public>
