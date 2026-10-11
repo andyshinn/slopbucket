@@ -1,3 +1,4 @@
+import type { ToolStatus } from "./tools-admin.ts";
 // Shared Tailwind class strings for the admin UI. Tap targets are at least 44px tall.
 export const btn =
   "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-base font-semibold shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50";
@@ -11,6 +12,12 @@ export const btnSecondary = `${btn} bg-white text-stone-900 ring-1 ring-stone-30
 export const input =
   "block w-full rounded-lg bg-white px-3 py-2.5 text-base text-stone-900 outline-1 -outline-offset-1 outline-stone-300 placeholder:text-stone-400 focus:outline-2 focus:-outline-offset-2 focus:outline-brand-600";
 export const label = "block text-sm font-medium text-stone-900";
+/** Status chip colors for tools; typed so a new status can't go unstyled. */
+export const toolStatusChip: Record<ToolStatus, string> = {
+  published: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
+  queued: "bg-amber-50 text-amber-800 ring-amber-600/20",
+  hidden: "bg-stone-100 text-stone-600 ring-stone-500/20",
+};
 export const card = "rounded-xl bg-white shadow-xs ring-1 ring-stone-200";
 
 export const SOURCE_LABELS: Record<string, string> = { hn: "Hacker News", lobsters: "lobste.rs", github: "GitHub", producthunt: "Product Hunt" };

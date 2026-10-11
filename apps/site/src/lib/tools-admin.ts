@@ -21,6 +21,10 @@ const ORDER: Record<ToolSort, string> = {
   name: "lower(t.name), t.id",
 };
 export const PAGE_SIZE = 50;
+/** Description cap, in UTF-16 code units: the same measure as the input's maxlength. */
+export const DESCRIPTION_MAX = 140;
+/** The description is one line: newlines and runs of spaces become one space. */
+export const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
 
 export interface ToolRow {
   id: number;
@@ -123,7 +127,7 @@ export async function getTool(db: D1Database, id: number, postLimit = POSTS_DEFA
         `SELECT a.kind, a.value, EXISTS (
            SELECT 1 FROM tool_merges m, json_each(m.moved_aliases) j
            WHERE m.into_tool_id = a.tool_id AND m.undone_at IS NULL
-             AND j.value ->> '$.kind' = a.kind AND j.value ->> '$.value' = a.value
+             AND json_extract(j.value, '$.kind') = a.kind AND json_extract(j.value, '$.value') = a.value
          ) AS via_merge
          FROM tool_aliases a WHERE a.tool_id = ?
          ORDER BY CASE a.kind WHEN 'repo' THEN 0 WHEN 'domain' THEN 1 ELSE 2 END, a.value`,
@@ -157,8 +161,8 @@ export async function parseToolForm(db: D1Database, form: FormData) {
   if (!name) throw new ToolError("Name can't be empty.");
   const slug = str("slug").toLowerCase();
   if (!SLUG.test(slug)) throw new ToolError("Slug: lowercase letters, digits and single hyphens.");
-  const description = str("description");
-  if (description.length > 140) throw new ToolError(`Description is ${description.length} characters; keep it under 140.`);
+  const description = oneLine(str("description"));
+  if (description.length > DESCRIPTION_MAX) throw new ToolError(`Description is ${description.length} characters; keep it to ${DESCRIPTION_MAX}.`);
   const category = str("category");
   if (!categories.includes(category)) throw new ToolError("Pick a category from the list.");
   const tags = [...new Set(form.getAll("tags").map(String))].filter((t) => vocabulary.includes(t));

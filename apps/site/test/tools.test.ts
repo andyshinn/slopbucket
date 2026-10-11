@@ -110,7 +110,10 @@ describe("updateTool", () => {
     await expect(updateTool(db, id, valid({ slug: "taken" }))).rejects.toThrow('"taken" is already used');
     await expect(updateTool(db, id, valid())).rejects.toThrow("max/worktrunk already belongs to Other. Merge");
     await expect(updateTool(db, id, valid({ github_repo: "", category: "sdk" }))).rejects.toThrow("category");
-    await expect(updateTool(db, id, valid({ github_repo: "", description: "x".repeat(141) }))).rejects.toThrow("under 140");
+    await expect(updateTool(db, id, valid({ github_repo: "", description: "x".repeat(141) }))).rejects.toThrow("keep it to 140");
+    // Newlines and runs of spaces collapse before the length check, matching what the one-line input sends.
+    await updateTool(db, id, valid({ github_repo: "", description: `Git\n  worktrees${" ".repeat(150)}for agents.` }));
+    expect((await getTool(db, id))!.description).toBe("Git worktrees for agents.");
     await expect(updateTool(db, id, valid({ github_repo: "", slug: "Bad Slug" }))).rejects.toThrow(ToolError);
   });
 });
@@ -175,7 +178,12 @@ describe("merge and split", () => {
     });
     expect([...k!.tags].sort()).toEqual(["claude-code", "cli"]);
     expect(k!.aliases.map((a) => a.value).sort()).toEqual(["max/worktrunk", "worktrunk", "worktrunkcli"]);
+    // Only the moved alias is marked; the target's own aliases (here before and after the merge) are not.
     expect(k!.aliases.filter((a) => a.via_merge).map((a) => a.value)).toEqual(["worktrunkcli"]);
+    // Removed and re-added by hand, it still counts as via merge while the merge is active (DESIGN.md).
+    await removeAlias(db, keep, "name", "worktrunkcli");
+    await addAlias(db, keep, "name", "worktrunkcli");
+    expect((await getTool(db, keep))!.aliases.find((a) => a.value === "worktrunkcli")!.via_merge).toBe(true);
     expect((await getTool(db, dupe))!.status).toBe("hidden");
     expect(await mergedInto(db, dupe)).toMatchObject({ id: keep, name: "Worktrunk" });
     const listed = await listTools(db, { status: "hidden" });

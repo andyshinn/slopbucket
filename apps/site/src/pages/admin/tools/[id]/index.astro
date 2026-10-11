@@ -6,6 +6,7 @@ import Notice from "../../../../components/Notice.astro";
 import ToolAvatar from "../../../../components/ToolAvatar.astro";
 import Admin from "../../../../layouts/Admin.astro";
 import {
+  DESCRIPTION_MAX,
   POSTS_ALL,
   POSTS_DEFAULT,
   ToolError,
@@ -13,12 +14,13 @@ import {
   getTool,
   mergeHistory,
   mergedInto,
+  oneLine,
   removeAlias,
   setHidden,
   splitMerge,
   updateTool,
 } from "../../../../lib/tools-admin.ts";
-import { SOURCE_LABELS, btnPrimary, btnReject, btnSecondary, card, input, label, safeHref, timeAgo } from "../../../../lib/ui.ts";
+import { SOURCE_LABELS, btnPrimary, btnReject, btnSecondary, card, input, label, safeHref, timeAgo, toolStatusChip } from "../../../../lib/ui.ts";
 
 const id = Number(Astro.params.id);
 if (!Number.isInteger(id) || id <= 0) return Astro.redirect("/admin/tools", 302);
@@ -77,12 +79,8 @@ const doneMessage: Record<string, string> = {
   unhide: "Visible again.",
 };
 const homepage = safeHref(tool.homepage_url);
-const description = field("description", tool.description);
-const statusChip: Record<string, string> = {
-  published: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
-  queued: "bg-amber-50 text-amber-800 ring-amber-600/20",
-  hidden: "bg-stone-100 text-stone-600 ring-stone-500/20",
-};
+// An <input> drops newlines on load, so show (and count) the one-line form that saving stores.
+const description = oneLine(field("description", tool.description));
 ---
 
 <Admin title={`Edit ${tool.name}`} section="tools">
@@ -90,7 +88,7 @@ const statusChip: Record<string, string> = {
   <div class="mt-2 flex items-center gap-3">
     <ToolAvatar name={tool.name} category={tool.category ?? "other"} githubRepo={tool.github_repo} class="size-11 rounded-[10px] text-lg" />
     <h1 class="min-w-0 flex-1 text-lg font-semibold break-words">{tool.name}</h1>
-    <span class={`shrink-0 rounded-md px-2 py-0.5 text-xs font-medium capitalize ring-1 ring-inset ${statusChip[tool.status]}`}>{tool.status}</span>
+    <span class={`shrink-0 rounded-md px-2 py-0.5 text-xs font-medium capitalize ring-1 ring-inset ${toolStatusChip[tool.status]}`}>{tool.status}</span>
   </div>
   <p class="mt-1 text-sm text-stone-600">
     First seen {timeAgo(tool.first_seen_at)} · {tool.postCount} {tool.postCount === 1 ? "post" : "posts"}
@@ -122,11 +120,11 @@ const statusChip: Record<string, string> = {
     <div>
       <div class="flex items-baseline justify-between gap-3">
         <label for="description" class={label}>Description</label>
-        {/* The admin ships no JS, so this counts the saved text; maxlength stops typing at 140. */}
-        <span class="font-mono text-xs text-stone-500 tabular-nums">{[...description].length} / 140</span>
+        {/* The admin ships no JS, so this counts the saved text; maxlength stops typing at the cap. */}
+        <span class="font-mono text-xs text-stone-500 tabular-nums">{description.length} / {DESCRIPTION_MAX}</span>
       </div>
-      <input id="description" name="description" value={description} maxlength="140" aria-describedby="description-hint" class={`${input} mt-1`} autocomplete="off" />
-      <p id="description-hint" class="mt-1 text-xs text-stone-500">Describe the tool, not a post. One line, up to 140 characters.</p>
+      <input id="description" name="description" value={description} maxlength={DESCRIPTION_MAX} aria-describedby="description-hint" class={`${input} mt-1`} autocomplete="off" />
+      <p id="description-hint" class="mt-1 text-xs text-stone-500">Describe the tool, not a post. One line, up to {DESCRIPTION_MAX} characters.</p>
     </div>
     <div>
       <label for="category" class={label}>Category</label>

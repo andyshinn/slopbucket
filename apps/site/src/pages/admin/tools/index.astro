@@ -6,7 +6,7 @@ import Icon from "../../../components/Icon.astro";
 import ToolAvatar from "../../../components/ToolAvatar.astro";
 import Admin from "../../../layouts/Admin.astro";
 import { PAGE_SIZE, TOOL_SORTS, type ToolRow, listTools, toolStatusCounts } from "../../../lib/tools-admin.ts";
-import { accentFill, btnPrimary, btnSecondary, card, input, label, timeAgo } from "../../../lib/ui.ts";
+import { accentFill, btnPrimary, btnSecondary, card, input, label, timeAgo, toolStatusChip } from "../../../lib/ui.ts";
 
 const params = Astro.url.searchParams;
 const q = (params.get("q") ?? "").trim();
@@ -39,14 +39,9 @@ function link(changes: Record<string, string | number>): string {
   const s = next.toString();
   return `/admin/tools${s ? `?${s}` : ""}`;
 }
-const statusChip: Record<string, string> = {
-  published: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
-  queued: "bg-amber-50 text-amber-800 ring-amber-600/20",
-  hidden: "bg-stone-100 text-stone-600 ring-stone-500/20",
-};
 const statusText = (t: ToolRow) => (t.merged_into ? "Merged" : t.status.charAt(0).toUpperCase() + t.status.slice(1));
 const categoryLabel = (slug: string | null) => (slug ? categoryDisplay(slug).label : "No category");
-const SOURCE_TEXT: Record<string, string> = { "1": "Open", "0": "Closed", null: "Unknown" };
+const sourceText = (v: number | null) => (v === 1 ? "Open" : v === 0 ? "Closed" : "Unknown");
 const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 ---
 
@@ -94,7 +89,7 @@ const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   </form>
 
   <p class="mt-4 text-sm text-stone-600">
-    {total.toLocaleString()} {total === 1 ? "tool" : "tools"}{q && <> matching “{q}”</>}
+    {total.toLocaleString("en")} {total === 1 ? "tool" : "tools"}{q && <> matching “{q}”</>}
   </p>
   {tools.length === 0 && <p class={`${card} mt-2 p-4 text-sm text-stone-600`}>No tools match.</p>}
 
@@ -108,7 +103,7 @@ const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
             <span class="min-w-0 flex-1">
               <span class="flex items-center gap-2">
                 <span class="truncate font-medium text-stone-900">{t.name}</span>
-                <span class={`shrink-0 rounded-md px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset ${statusChip[t.status]}`}>{statusText(t)}</span>
+                <span class={`shrink-0 rounded-md px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset ${toolStatusChip[t.status]}`}>{statusText(t)}</span>
               </span>
               {t.github_repo && <span class="block truncate font-mono text-xs text-stone-500">{t.github_repo}</span>}
               <span class="block text-sm text-stone-500">
@@ -155,11 +150,11 @@ const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
               </td>
               <td class="px-3 py-2.5 whitespace-nowrap">{t.category ? <CategoryBadge category={t.category} /> : <span class="text-stone-500">None</span>}</td>
               <td class="px-3 py-2.5 whitespace-nowrap">
-                <span class={`rounded-md px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset ${statusChip[t.status]}`}>{statusText(t)}</span>
+                <span class={`rounded-md px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset ${toolStatusChip[t.status]}`}>{statusText(t)}</span>
               </td>
               <td class="px-3 py-2.5 text-right font-mono tabular-nums">{t.posts.toLocaleString("en")}</td>
               <td class="px-3 py-2.5 whitespace-nowrap text-stone-600">{t.last_post_at ? timeAgo(t.last_post_at) : "Never"}</td>
-              <td class="px-3 py-2.5 whitespace-nowrap text-stone-600">{SOURCE_TEXT[String(t.is_open_source)]}</td>
+              <td class="px-3 py-2.5 whitespace-nowrap text-stone-600">{sourceText(t.is_open_source)}</td>
               <td class="px-4 py-2.5 text-right">
                 <a href={`/admin/tools/${t.id}`} class="inline-flex min-h-9 items-center gap-1 rounded-lg px-2 font-medium text-stone-700 hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-lime-600" aria-label={`Edit ${t.name}`}>
                   <Icon name="pencil" class="size-4 text-stone-400" /> Edit
