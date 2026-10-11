@@ -34,14 +34,13 @@ export interface RawRow extends Omit<ToolRow, "tags" | "sources" | "is_open_sour
 }
 
 const PUBLISHED_POSTS = "FROM posts p WHERE p.tool_id = t.id AND p.status = 'published'";
-/** Columns of a ToolRow, selected FROM tools t (callers add joins and WHERE). */
-export const ROW_SELECT = `SELECT t.id, t.slug, t.name, t.description, coalesce(t.category, 'other') AS category, t.tags, t.github_repo, t.is_open_source,
+/** Columns of a ToolRow, for a query FROM tools t. */
+export const ROW_COLUMNS = `t.id, t.slug, t.name, t.description, coalesce(t.category, 'other') AS category, t.tags, t.github_repo, t.is_open_source,
   (SELECT count(*) ${PUBLISHED_POSTS}) AS posts,
   (SELECT group_concat(DISTINCT p.source) ${PUBLISHED_POSTS}) AS sources,
   (SELECT max(p.posted_at) ${PUBLISHED_POSTS}) AS last_posted_at,
   (SELECT r.stars FROM repo_snapshots r WHERE r.tool_id = t.id ORDER BY r.date DESC LIMIT 1) AS stars,
-  (SELECT r.stars FROM repo_snapshots r WHERE r.tool_id = t.id AND r.date <= date('now', '-7 days') ORDER BY r.date DESC LIMIT 1) AS stars_week_ago
-  FROM tools t`;
+  (SELECT r.stars FROM repo_snapshots r WHERE r.tool_id = t.id AND r.date <= date('now', '-7 days') ORDER BY r.date DESC LIMIT 1) AS stars_week_ago`;
 
 export function toRow(raw: RawRow): ToolRow {
   let tags: string[] = [];

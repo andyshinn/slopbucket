@@ -3,7 +3,7 @@
 // (/, /new, /search, /category/[name]) goes through browse().
 
 import { type TagGroups, getSetting } from "@slop-bucket/core";
-import { PAGE_SIZE, ROW_SELECT, type RawRow, type ToolRow, pageParam, toRow } from "./public.ts";
+import { PAGE_SIZE, ROW_COLUMNS, type RawRow, type ToolRow, pageParam, toRow } from "./public.ts";
 
 export const SORTS = { trending: "Trending", new: "Newest", stars: "Most stars", discussed: "Most discussed", best: "Best match" } as const;
 export type Sort = keyof typeof SORTS;
@@ -76,11 +76,22 @@ const ftsMatch = (q: string) =>
 /** Facets the sidebar counts; a facet's counts ignore its own filter. */
 type Facet = "category" | "license" | "stars" | "lang" | "seen" | `tag:${string}`;
 
-// Latest repo snapshot per tool (stars and language).
-const LATEST = `latest AS (SELECT r.tool_id, r.stars, r.language FROM repo_snapshots r
-  WHERE r.date = (SELECT max(r2.date) FROM repo_snapshots r2 WHERE r2.tool_id = r.tool_id))`;
+// Latest repo snapshot per tool (stars and language). SQLite takes the bare
+// columns from the row that has max(date), so this is one pass over the table.
+const LATEST = "latest AS (SELECT tool_id, stars, language, max(date) AS date FROM repo_snapshots GROUP BY tool_id)";
 
-function where(f: Filters, groups: TagGroups, omit?: Facet): { sql: string; binds: unknown[] } {
+interface Where {
+  sql: string;
+  binds: unknown[];
+}
+
+/**
+ * The WHERE conditions for the filters, leaving out `omit` (a facet's own filter).
+ * `withMatch: false` leaves out the full-text condition for a query that joins
+ * tools_fts itself.
+ */
+function where(f: Filters, groups: TagGroups, opts: { omit?: Facet; withMatch?: boolean } = {}): Where {
+  const { omit, withMatch = true } = opts;
   const clauses = ["t.status = 'published'"];
   const binds: unknown[] = [];
   const inList = (values: unknown[]) => {
@@ -88,7 +99,7 @@ function where(f: Filters, groups: TagGroups, omit?: Facet): { sql: string; bind
     return values.map(() => "?").join(", ");
   };
   const match = ftsMatch(f.q);
-  if (match) {
+  if (match && withMatch) {
     clauses.push("t.id IN (SELECT rowid FROM tools_fts WHERE tools_fts MATCH ?)");
     binds.push(match);
   }
@@ -108,7 +119,13 @@ function where(f: Filters, groups: TagGroups, omit?: Facet): { sql: string; bind
     clauses.push("t.first_seen_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ?)");
     binds.push(`-${f.seen} days`);
   }
-  return { sql: `WITH ${LATEST} SELECT {cols} FROM tools t LEFT JOIN latest l ON l.tool_id = t.id WHERE ${clauses.join(" AND ")}`, binds };
+  return { sql: clauses.join(" AND "), binds };
+}
+
+/** One statement over published tools with their latest snapshot as `l`. Binds go in SQL order. */
+function select(db: D1Database, q: { cols: string; join?: Where; where: Where; tail?: Where }): D1PreparedStatement {
+  const sql = `WITH ${LATEST} SELECT ${q.cols} FROM tools t LEFT JOIN latest l ON l.tool_id = t.id ${q.join?.sql ?? ""} WHERE ${q.where.sql} ${q.tail?.sql ?? ""}`;
+  return db.prepare(sql).bind(...(q.join?.binds ?? []), ...q.where.binds, ...(q.tail?.binds ?? []));
 }
 
 const ORDER: Record<Sort, string> = {
@@ -148,37 +165,38 @@ export interface BrowseResult {
 
 export async function browse(db: D1Database, f: Filters, groups: TagGroups): Promise<BrowseResult> {
   const match = ftsMatch(f.q);
-  const base = where(f, groups);
-  const rowSelect = ROW_SELECT.replace(/^SELECT /, "").replace(/\s+FROM tools t$/, "");
-  const highlight = match
-    ? `, highlight(tools_fts, 0, '${MARK_OPEN}', '${MARK_CLOSE}') AS name_marked, highlight(tools_fts, 1, '${MARK_OPEN}', '${MARK_CLOSE}') AS description_marked`
-    : "";
-  let listSql = base.sql.replace("{cols}", rowSelect + highlight);
-  const listBinds = [...base.binds];
-  if (match) {
-    // The join gives bm25() and highlight() their row; it repeats the MATCH.
-    listSql = listSql.replace("LEFT JOIN latest l ON l.tool_id = t.id", "LEFT JOIN latest l ON l.tool_id = t.id JOIN tools_fts ON tools_fts.rowid = t.id AND tools_fts MATCH ?");
-    listBinds.unshift(match);
-  }
-  listSql += ` ORDER BY ${ORDER[f.sort === "best" && !match ? "trending" : f.sort]} LIMIT ? OFFSET ?`;
-  listBinds.push(PAGE_SIZE, (f.page - 1) * PAGE_SIZE);
+  const list = match
+    ? // With a query, joining tools_fts filters by the match and gives bm25() and highlight() their row.
+      select(db, {
+        cols: `${ROW_COLUMNS}, highlight(tools_fts, 0, '${MARK_OPEN}', '${MARK_CLOSE}') AS name_marked, highlight(tools_fts, 1, '${MARK_OPEN}', '${MARK_CLOSE}') AS description_marked`,
+        join: { sql: "JOIN tools_fts ON tools_fts.rowid = t.id AND tools_fts MATCH ?", binds: [match] },
+        where: where(f, groups, { withMatch: false }),
+        tail: { sql: `ORDER BY ${ORDER[f.sort]} LIMIT ? OFFSET ?`, binds: [PAGE_SIZE, (f.page - 1) * PAGE_SIZE] },
+      })
+    : select(db, {
+        cols: ROW_COLUMNS,
+        where: where(f, groups),
+        tail: { sql: `ORDER BY ${ORDER[f.sort === "best" ? "trending" : f.sort]} LIMIT ? OFFSET ?`, binds: [PAGE_SIZE, (f.page - 1) * PAGE_SIZE] },
+      });
 
-  const facet = (omit: Facet, cols: string, tail = "") => {
-    const w = where(f, groups, omit);
-    return db.prepare(w.sql.replace("{cols}", cols) + tail).bind(...w.binds);
-  };
+  const facet = (omit: Facet, cols: string, tail = "") => select(db, { cols, where: where(f, groups, { omit }), tail: { sql: tail, binds: [] } });
   const tagFacets = groups.map((g) => {
-    const w = where(f, groups, `tag:${g.slug}`);
     const slugs = g.tags.map((t) => t.slug);
-    const sql = w.sql.replace("{cols}", "j.value AS k, count(*) AS n").replace("LEFT JOIN latest l ON l.tool_id = t.id", "LEFT JOIN latest l ON l.tool_id = t.id, json_each(t.tags) j");
-    return db.prepare(`${sql} AND j.value IN (${slugs.map(() => "?").join(", ")}) GROUP BY j.value`).bind(...w.binds, ...slugs);
+    return select(db, {
+      // count(DISTINCT): a tool whose tags repeat a slug still counts once.
+      cols: "j.value AS k, count(DISTINCT t.id) AS n",
+      join: { sql: "JOIN json_each(t.tags) j", binds: [] },
+      where: where(f, groups, { omit: `tag:${g.slug}` }),
+      tail: { sql: `AND j.value IN (${slugs.map(() => "?").join(", ")}) GROUP BY j.value`, binds: slugs },
+    });
   });
+  // STAR_STEPS and SEEN_DAYS are numeric constants, so they are safe to inline.
   const starCols = STAR_STEPS.map((s) => `coalesce(sum(l.stars >= ${s}), 0) AS s${s}`).join(", ");
   const seenCols = SEEN_DAYS.map((d) => `coalesce(sum(t.first_seen_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-${d} days')), 0) AS d${d}`).join(", ");
 
   const results = await db.batch<Record<string, unknown>>([
-    db.prepare(listSql).bind(...listBinds),
-    db.prepare(base.sql.replace("{cols}", "count(*) AS n")).bind(...base.binds),
+    list,
+    select(db, { cols: "count(*) AS n", where: where(f, groups) }),
     facet("category", "coalesce(t.category, 'other') AS k, count(*) AS n", " GROUP BY k"),
     facet("license", "coalesce(sum(t.is_open_source = 1), 0) AS open, coalesce(sum(t.is_open_source = 0), 0) AS closed"),
     facet("stars", starCols),
@@ -186,11 +204,11 @@ export async function browse(db: D1Database, f: Filters, groups: TagGroups): Pro
     facet("seen", seenCols),
     ...tagFacets,
   ]);
-  const [list, count, cats, license, stars, langs, seen, ...tags] = results.map((r) => r.results);
+  const [rows, count, cats, license, stars, langs, seen, ...tags] = results.map((r) => r.results);
   const pairs = (rows: Record<string, unknown>[]) => rows.map((r) => [r.k as string, r.n as number] as [string, number]);
 
   return {
-    tools: (list as unknown as (RawRow & { name_marked?: string; description_marked?: string })[]).map((raw) => {
+    tools: (rows as unknown as (RawRow & { name_marked?: string; description_marked?: string })[]).map((raw) => {
       const { name_marked, description_marked, ...rest } = raw;
       const row: BrowseRow = toRow(rest as RawRow);
       if (match) {
@@ -255,6 +273,8 @@ export interface BrowsePage {
   categories: string[];
   /** Set when the page number is past the end: redirect there. */
   redirect?: string;
+  /** Set when `fixedCategory` isn't in the categories setting; nothing was queried. */
+  notFound?: boolean;
 }
 
 /** Everything a list page needs. `fixedCategory` pins the category (on /category/[name]). */
@@ -262,8 +282,13 @@ export async function loadBrowsePage(db: D1Database, url: URL, base: string, def
   const filters = parseFilters(url.searchParams, defaultSort);
   if (fixedCategory) filters.categories = [fixedCategory];
   const [groups, categories] = await Promise.all([getSetting(db, "tags"), getSetting(db, "categories")]);
+  if (fixedCategory && !categories.includes(fixedCategory)) {
+    return { filters, groups, categories, notFound: true, result: { tools: [], total: 0, facets: emptyFacets() } };
+  }
   const result = await browse(db, filters, groups);
   const lastPage = Math.max(1, Math.ceil(result.total / PAGE_SIZE));
   const redirect = filters.page > lastPage ? browseHref(base, fixedCategory ? { ...filters, categories: [] } : filters, defaultSort, { page: lastPage }) : undefined;
   return { filters, result, groups, categories, redirect };
 }
+
+const emptyFacets = (): Facets => ({ categories: new Map(), tags: new Map(), license: { open: 0, closed: 0 }, stars: new Map(), langs: [], seen: new Map() });

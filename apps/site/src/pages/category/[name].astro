@@ -1,5 +1,4 @@
 ---
-import { getSetting } from "@slop-bucket/core";
 import { env } from "cloudflare:workers";
 import BrowseList from "../../components/BrowseList.astro";
 import Public from "../../layouts/Public.astro";
@@ -7,11 +6,10 @@ import { loadBrowsePage } from "../../lib/browse.ts";
 import { categoryStyle } from "../../lib/categories.ts";
 
 const name = Astro.params.name ?? "";
-const categories = await getSetting(env.DB, "categories");
-if (!categories.includes(name)) return new Response("Not found", { status: 404 });
-
 const base = `/category/${name}`;
 const page = await loadBrowsePage(env.DB, Astro.url, base, "trending", name);
+// Checked before any list query runs; not cached, since the edge cache keeps 200s only.
+if (page.notFound) return new Response("Not found", { status: 404 });
 if (page.redirect) return Astro.redirect(page.redirect, 302);
 const c = categoryStyle(name);
 ---

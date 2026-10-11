@@ -214,7 +214,7 @@ All state lives in one D1 database. Extracted article text is stored in R2, keye
 
 ## Frontend
 
-The site is Astro with the Cloudflare adapter, deployed as a Worker with static assets on the custom domain `slopbucket.app` (no `workers.dev` URL). Pages are server-rendered from D1 and cached at the edge for 5 minutes (the Workers Cache API, in `middleware.ts`; `/admin` and `/api` are never cached). The cache key is the path plus the query parameters a page reads (`PAGE_PARAMS` in `lib/edge-cache.ts`), so stray parameters can't multiply cache entries; a page that reads a new parameter adds it there. Data changes once a day, so a short TTL keeps pages fresh without purging, and pages stay fast and indexable without a rebuild per day.
+The site is Astro with the Cloudflare adapter, deployed as a Worker with static assets on the custom domain `slopbucket.app` (no `workers.dev` URL). Pages are server-rendered from D1 and cached at the edge for 5 minutes (the Workers Cache API, in `middleware.ts`; `/admin` and `/api` are never cached). The cache key is the path plus the filters as `parseFilters` reads them, written back in one canonical form (`pageCacheKey` in `lib/edge-cache.ts`), so unknown parameters, bad values and reorderings share one entry. Data changes once a day, so a short TTL keeps pages fresh without purging, and pages stay fast and indexable without a rebuild per day.
 
 | Route | Content |
 | --- | --- |

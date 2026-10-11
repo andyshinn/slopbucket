@@ -158,6 +158,11 @@ describe("edge cache", () => {
     expect(key("https://slopbucket.app/?utm_source=x&page=2")).toBe("https://slopbucket.app/?page=2");
     expect(key("https://slopbucket.app/?a=1")).toBe("https://slopbucket.app/");
     expect(key("https://slopbucket.app/search?tag=b&q=x&tag=a&utm=1")).toBe("https://slopbucket.app/search?q=x&tag=b&tag=a");
+    // Equivalent filters share a key; bad values drop out.
+    expect(key("https://slopbucket.app/search?q=%20x%20&tag=b&tag=b&stars=7&license=maybe&page=1")).toBe("https://slopbucket.app/search?q=x&tag=b");
+    // The sort stays as asked for, since pages differ in their default.
+    expect(key("https://slopbucket.app/new?sort=trending")).toBe("https://slopbucket.app/new?sort=trending");
+    expect(key("https://slopbucket.app/new?sort=bogus")).toBe("https://slopbucket.app/new");
     expect(key("https://slopbucket.app/about?b=2#ranking")).toBe("https://slopbucket.app/about");
   });
 

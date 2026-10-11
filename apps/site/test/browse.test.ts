@@ -93,6 +93,13 @@ describe("browse", () => {
     expect(facets.seen.get(7)).toBe(1);
   });
 
+  it("counts a tool once in a tag facet even if its tags repeat", async () => {
+    await tool("Dup", { tags: ["macos", "macos"] });
+    const { facets, total } = await run("tag=macos");
+    expect(total).toBe(1);
+    expect(facets.tags.get("macos")).toBe(1);
+  });
+
   it("sorts by trending, newest, stars and posts", async () => {
     await tool("Old", { score: 9, seen: "2026-01-01T00:00:00.000Z", stars: 5 });
     const b = await tool("Fresh", { score: 1, stars: 900 });
@@ -134,6 +141,15 @@ describe("browse", () => {
 describe("highlightHtml", () => {
   it("escapes text and keeps only the match markers as markup", () => {
     expect(highlightHtml('a <b> & "c" \u0001x\u0002')).toBe('a &lt;b&gt; &amp; &quot;c&quot; <mark class="bg-lime-50 text-inherit shadow-[inset_0_-2px_0_var(--color-lime-400)] dark:bg-lime-400/15">x</mark>');
+  });
+});
+
+describe("loadBrowsePage", () => {
+  it("returns notFound for an unknown category without querying", async () => {
+    const { loadBrowsePage } = await import("../src/lib/browse.ts");
+    const page = await loadBrowsePage(db, new URL("https://x.dev/category/nope"), "/category/nope", "trending", "nope");
+    expect(page.notFound).toBe(true);
+    expect((await loadBrowsePage(db, new URL("https://x.dev/category/agent"), "/category/agent", "trending", "agent")).notFound).toBeUndefined();
   });
 });
 

@@ -173,9 +173,11 @@ const menuLink = `flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm text-
       // Dialogs (the phone filter panel): open, close, and close on a backdrop tap.
       document.addEventListener("click", function (e) {
         var opener = e.target.closest("[data-open-dialog]");
-        if (opener) document.getElementById(opener.getAttribute("data-open-dialog")).showModal();
+        var dialog = opener && document.getElementById(opener.getAttribute("data-open-dialog"));
+        if (dialog && !dialog.open) dialog.showModal();
         var closer = e.target.closest("[data-close-dialog]");
         if (closer) closer.closest("dialog").close();
+        // The panel inside fills the dialog, so a click on the dialog itself is the backdrop.
         if (e.target.tagName === "DIALOG") e.target.close();
       });
 
