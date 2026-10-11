@@ -10,13 +10,21 @@ interface Props {
 const { title, section } = Astro.props;
 const email = Astro.locals.adminEmail;
 const counts = await navCounts(env.DB);
-const tabs = [
-  { id: "queue", href: "/admin/queue", label: "Queue", count: counts?.queue },
-  { id: "tools", href: "/admin/tools", label: "Tools", count: counts?.tools },
-  { id: "reports", href: "/admin/reports", label: "Reports", count: counts?.reports },
+interface Tab {
+  id: NonNullable<Props["section"]>;
+  href: string;
+  label: string;
+  count?: number;
+  /** What the count means, for screen readers. */
+  countLabel?: string;
+}
+const tabs: Tab[] = [
+  { id: "queue", href: "/admin/queue", label: "Queue", count: counts?.queue, countLabel: "waiting" },
+  { id: "tools", href: "/admin/tools", label: "Tools", count: counts?.tools, countLabel: "tools" },
+  { id: "reports", href: "/admin/reports", label: "Reports", count: counts?.reports, countLabel: "open" },
   { id: "status", href: "/admin/status", label: "Status" },
   { id: "settings", href: "/admin/settings", label: "Settings" },
-] as const;
+];
 ---
 
 <Base title={`${title} · Slop Bucket admin`} noindex htmlClass="bg-stone-50" bodyClass="font-sans text-stone-900">
@@ -33,7 +41,6 @@ const tabs = [
       {
         tabs.map((t) => {
           const active = section === t.id;
-          const count = "count" in t ? t.count : undefined;
           return (
             <a
               href={t.href}
@@ -41,9 +48,10 @@ const tabs = [
               class={`flex min-h-11 shrink-0 items-center gap-1 border-b-2 px-2 text-sm font-medium focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-lime-600 ${active ? "border-stone-900 text-stone-900" : "border-transparent text-stone-500 hover:text-stone-900"}`}
             >
               {t.label}
-              {count !== undefined && (count > 0 || active) && (
+              {t.count !== undefined && (t.count > 0 || active) && (
                 <span class={`rounded-full px-1.5 font-mono text-xs tabular-nums ${active ? "bg-lime-400 text-lime-950" : "bg-stone-100 text-stone-600"}`}>
-                  {count.toLocaleString("en")}
+                  {t.count.toLocaleString("en")}
+                  <span class="sr-only"> {t.countLabel}</span>
                 </span>
               )}
             </a>

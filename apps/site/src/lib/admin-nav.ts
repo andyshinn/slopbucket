@@ -3,7 +3,7 @@
 export interface NavCounts {
   /** Posts waiting in the review queue. */
   queue: number;
-  /** Tools that aren't hidden. */
+  /** All tools, as on the Tools tab's default "All" view. */
   tools: number;
   /** Open visitor reports. */
   reports: number;
@@ -15,11 +15,12 @@ export async function navCounts(db: D1Database): Promise<NavCounts | null> {
     return await db
       .prepare(
         `SELECT (SELECT count(*) FROM posts WHERE status = 'queued') AS queue,
-          (SELECT count(*) FROM tools WHERE status != 'hidden') AS tools,
+          (SELECT count(*) FROM tools) AS tools,
           (SELECT count(*) FROM reports WHERE resolved_at IS NULL) AS reports`,
       )
       .first<NavCounts>();
-  } catch {
+  } catch (err) {
+    console.error("admin nav counts failed", err);
     return null;
   }
 }

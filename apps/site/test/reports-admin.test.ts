@@ -17,13 +17,13 @@ async function report(toolId: number, reason: string, createdAt: string, resolve
 }
 
 describe("navCounts", () => {
-  it("counts queued posts, visible tools and open reports", async () => {
+  it("counts queued posts, all tools and open reports", async () => {
     await db.batch([
       db.prepare("INSERT INTO tools (id, slug, name, status) VALUES (1, 'a', 'A', 'published'), (2, 'b', 'B', 'queued'), (3, 'c', 'C', 'hidden')"),
       db.prepare("INSERT INTO posts (source, external_id, url, canonical_url, title, posted_at, status, tool_id) VALUES ('hn', '1', 'u', 'u', 't', '2026-10-01', 'queued', 2), ('hn', '2', 'u', 'u', 't', '2026-10-01', 'published', 1)"),
       db.prepare("INSERT INTO reports (tool_id, reason) VALUES (1, 'spam')"),
     ]);
-    expect(await navCounts(db)).toEqual({ queue: 1, tools: 2, reports: 1 });
+    expect(await navCounts(db)).toEqual({ queue: 1, tools: 3, reports: 1 });
   });
 });
 
