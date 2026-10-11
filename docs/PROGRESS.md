@@ -33,7 +33,7 @@ Built outside the plan's step list, all needed before launch: the daily trending
 4. **Build while the backfill runs:**
    - ~~Queue page improvements~~: done (Resolves to box, tag chips, reason quote, lime Approve).
    - **The public site**, following the handoff's suggested build order. Steps 1 (tokens, layout, theme, `/about`), 2 (home trending list, rows, `/avatar/[owner]`, 5-minute edge cache) 3 (filters with faceted counts, sort, `/search`, `/new`, `/category/[name]`, the phone filter dialog) and 4 (tool pages with merge redirects, the report form, per-IP rate limits) are done. The admin Reports page (handoff step 8) is done too. **Next:** turn on reports (Turnstile, below), then step 5, the admin restyle (new nav, queue item polish, lime Approve). Merge redirects (301 from a merged tool's slug) are part of the tool page.
-   - **Reports page** (admin); only matters once the public site is up.
+   - ~~Reports page (admin)~~: done.
 5. **Step 7 tuning** against the backfilled data, then **step 8**: lower `review_threshold`, re-classify unreviewed posts so confident ones auto-publish, and go public.
 
 ## Open issues

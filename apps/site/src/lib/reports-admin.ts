@@ -16,13 +16,13 @@ export interface AdminReport {
 
 /** Open reports, newest first; or the most recently resolved ones. */
 export async function listReports(db: D1Database, resolved = false, limit = 50): Promise<AdminReport[]> {
+  const [where, order] = resolved ? ["r.resolved_at IS NOT NULL", "r.resolved_at"] : ["r.resolved_at IS NULL", "r.created_at"];
   const { results } = await db
     .prepare(
       `SELECT r.id, r.reason, r.note, r.created_at, r.resolved_at, r.tool_id,
         t.name AS tool_name, t.slug AS tool_slug, t.status AS tool_status
        FROM reports r JOIN tools t ON t.id = r.tool_id
-       WHERE r.resolved_at IS ${resolved ? "NOT NULL" : "NULL"}
-       ORDER BY ${resolved ? "r.resolved_at" : "r.created_at"} DESC, r.id DESC LIMIT ?`,
+       WHERE ${where} ORDER BY ${order} DESC, r.id DESC LIMIT ?`,
     )
     .bind(limit)
     .all<AdminReport>();

@@ -17,7 +17,8 @@ const tabs = [
   { id: "status", href: "/admin/status", label: "Status", icon: "chartBar" },
   { id: "settings", href: "/admin/settings", label: "Settings", icon: "cog" },
 ] as const;
-const openReports = await openReportCount(env.DB);
+// A badge only: a failed count must not take the whole admin down.
+const openReports = await openReportCount(env.DB).catch(() => 0);
 ---
 
 <Base title={`${title} · Slop Bucket admin`} noindex>

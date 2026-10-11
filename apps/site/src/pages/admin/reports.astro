@@ -11,9 +11,10 @@ const showResolved = Astro.url.searchParams.get("show") === "resolved";
 if (Astro.request.method === "POST") {
   const form = await Astro.request.formData();
   const id = Number(form.get("id"));
-  if (form.get("action") === "resolve" && Number.isInteger(id) && id > 0) await resolveReport(env.DB, id);
-  // Resolving one that was already resolved (a double tap) lands on the same list.
-  return Astro.redirect(`/admin/reports?resolved=${id}`, 303);
+  let ok = false;
+  if (form.get("action") === "resolve" && Number.isInteger(id) && id > 0) ok = await resolveReport(env.DB, id);
+  // Only a report this POST actually resolved gets the notice; a double tap just lands on the list.
+  return Astro.redirect(ok ? `/admin/reports?resolved=${id}` : "/admin/reports", 303);
 }
 const justResolved = Number(Astro.url.searchParams.get("resolved")) || null;
 
