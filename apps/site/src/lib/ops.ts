@@ -148,16 +148,21 @@ export async function reclassifyQueued(db: D1Database, classifyQueue: Queue, now
   return ids.length;
 }
 
-/** Classification rate is measured over this window. */
+/** Classification rate is measured over at most this window. */
 const RATE_WINDOW_MIN = 15;
+/** Fewer classified posts than this in the window is too little to estimate a finish time from. */
+const RATE_MIN_SAMPLES = 3;
 /** A backfill's fetching is over once no fetch run has started for this long (failed days are not retried forever). */
 const FETCH_QUIET_MIN = 60;
 
 export interface ClassifyProgress {
   pending: number;
-  /** Posts classified per minute over the last 15 minutes. */
+  /**
+   * Posts classified per minute, over the last 15 minutes or since classifying
+   * started within them, so a run that just began isn't averaged with idle time.
+   */
   perMinute: number;
-  /** Minutes until nothing is pending at the current rate, or null when nothing is moving. */
+  /** Minutes until nothing is pending at the current rate, or null when nothing is moving or it's too early to tell. */
   etaMinutes: number | null;
   /** Posts are waiting but none was classified in 15 minutes (usually the daily AI spend cap). */
   stalled: boolean;
@@ -170,16 +175,21 @@ export async function classifyProgress(db: D1Database, now = Date.now()): Promis
       `SELECT
          (SELECT count(*) FROM posts WHERE status = 'pending') AS pending,
          (SELECT count(*) FROM posts WHERE classified_at >= ?1 AND status != 'pending') AS recent,
+         (SELECT min(classified_at) FROM posts WHERE classified_at >= ?1 AND status != 'pending') AS first,
          (SELECT min(created_at) FROM posts WHERE status = 'pending') AS oldest`,
     )
     .bind(since)
-    .first<{ pending: number; recent: number; oldest: string | null }>();
+    .first<{ pending: number; recent: number; first: string | null; oldest: string | null }>();
   const pending = r?.pending ?? 0;
-  const perMinute = (r?.recent ?? 0) / RATE_WINDOW_MIN;
+  const recent = r?.recent ?? 0;
+  // Measure from the first classification in the window (at least a minute), not
+  // the whole window: after an idle spell the 15 minutes would mostly be idle time.
+  const elapsed = r?.first ? (now - Date.parse(r.first)) / MINUTE : RATE_WINDOW_MIN;
+  const perMinute = recent / Math.min(RATE_WINDOW_MIN, Math.max(1, elapsed));
   return {
     pending,
     perMinute,
-    etaMinutes: pending > 0 && perMinute > 0 ? Math.ceil(pending / perMinute) : null,
+    etaMinutes: pending > 0 && recent >= RATE_MIN_SAMPLES ? Math.ceil(pending / perMinute) : null,
     stalled: pending > 0 && perMinute === 0 && r?.oldest != null && r.oldest < since,
   };
 }
