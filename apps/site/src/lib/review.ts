@@ -62,8 +62,9 @@ export async function getQueueItem(db: D1Database, id: number): Promise<QueueIte
 }
 
 /**
- * True when the post's tool exists only because of this post: the resolver found
- * no repo, domain or name to match, so classifying the post created it.
+ * True when this post is the only one linked to a still-queued tool (posts of
+ * any status count). Usually the resolver created the tool for this post, but
+ * a hand-moved post can look the same, so the page says only what this checks.
  */
 export const isNewTool = (tool: ToolSummary): boolean => tool.posts <= 1 && tool.status === "queued";
 

@@ -5,7 +5,7 @@ import Icon from "../../../../components/Icon.astro";
 import Notice from "../../../../components/Notice.astro";
 import Admin from "../../../../layouts/Admin.astro";
 import { ReviewError, approvePost, getQueueItem, isNewTool, queueCount, readArticleText, rejectPost, tagChips } from "../../../../lib/review.ts";
-import { SOURCE_LABELS, btnApprove, btnReject, btnSecondary, card, githubHref, hostname, safeHref, timeAgo } from "../../../../lib/ui.ts";
+import { SOURCE_LABELS, accentFill, accentLink, btnApprove, btnReject, btnSecondary, card, githubHref, hostname, safeHref, timeAgo } from "../../../../lib/ui.ts";
 
 const id = Number(Astro.params.id);
 if (!Number.isInteger(id) || id <= 0) return Astro.redirect("/admin/queue", 302);
@@ -95,10 +95,10 @@ try {
         ) : isNewTool(tool) ? (
           <>
             <p class="mt-1 flex flex-wrap items-center gap-2">
-              <span class="rounded-md bg-lime-400 px-2 py-0.5 text-xs font-semibold text-lime-950">New tool</span>
+              <span class={`rounded-md px-2 py-0.5 text-xs font-semibold ${accentFill}`}>New tool</span>
               <a href={`/admin/tools/${tool.id}`} class="font-semibold hover:underline">{tool.name}</a>
             </p>
-            <p class="mt-1 text-gray-600">No repo, domain or name matched, so this post created it.</p>
+            <p class="mt-1 text-gray-600">This is the tool's only post, so approving it publishes the tool.</p>
           </>
         ) : (
           <p class="mt-1">
@@ -137,7 +137,7 @@ try {
           {struck && (
             <p class="mt-2 text-sm text-gray-600">
               Struck tags aren't in your tag list. Saving with Edit drops them.{" "}
-              <a href="/admin/settings#tags" class="font-medium text-lime-700 underline underline-offset-2">Review suggestions</a>
+              <a href="/admin/settings#tags" class={accentLink}>Edit tag list</a>
             </p>
           )}
         </div>

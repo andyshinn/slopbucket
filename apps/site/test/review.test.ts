@@ -249,7 +249,7 @@ describe("queue item display", () => {
     expect(tagChips("macos", groups)).toEqual([]);
   });
 
-  it("calls a tool new when this queued post is its only one", async () => {
+  it("calls a tool new when this is the only post of a queued tool", async () => {
     const id = await tool("Patchwork");
     const first = await post(id);
     expect(isNewTool((await getQueueItem(db, first))!.tool!)).toBe(true);
