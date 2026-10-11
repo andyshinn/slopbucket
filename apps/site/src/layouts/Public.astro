@@ -1,6 +1,7 @@
 ---
 import { getSetting } from "@slop-bucket/core";
 import { env } from "cloudflare:workers";
+import CategoryLinks from "../components/CategoryLinks.astro";
 import Icon from "../components/Icon.astro";
 import { categoryStyle } from "../lib/categories.ts";
 import Base from "./Base.astro";
@@ -62,16 +63,9 @@ const menuLink = `flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm text-
           <summary class={`${navItem(nav === "categories")} cursor-pointer list-none [&::-webkit-details-marker]:hidden`}>
             Categories <Icon name="chevronDown" class="size-4" />
           </summary>
-          <ul class={`${menuPanel} w-64`}>
-            {categories.map((c) => (
-              <li>
-                <a href={`/category/${c.slug}`} class={menuLink}>
-                  <span class={`size-2 shrink-0 rounded-full ${c.dot}`} aria-hidden="true" />
-                  {c.label}
-                </a>
-              </li>
-            ))}
-          </ul>
+          <div class={`${menuPanel} w-64`}>
+            <CategoryLinks categories={categories} linkClass={menuLink} />
+          </div>
         </details>
       </nav>
 
@@ -102,20 +96,11 @@ const menuLink = `flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm text-
           <summary class={`${iconButton} cursor-pointer list-none [&::-webkit-details-marker]:hidden`} aria-label="Menu">
             <Icon name="bars3" />
           </summary>
-          <nav class={`${menuPanel} right-0 max-h-[80vh] w-72 overflow-y-auto`} aria-label="Main">
+          <nav class={`${menuPanel} right-0 max-h-[80vh] w-72 overflow-y-auto`} aria-label="Menu">
             <a href="/" class={menuLink} aria-current={nav === "trending" ? "page" : undefined}>Trending</a>
             <a href="/new" class={menuLink} aria-current={nav === "new" ? "page" : undefined}>New</a>
             <p class="mt-2 px-3 py-2 font-mono text-xs tracking-widest text-stone-500 uppercase dark:text-stone-400">Categories</p>
-            <ul>
-              {categories.map((c) => (
-                <li>
-                  <a href={`/category/${c.slug}`} class={menuLink}>
-                    <span class={`size-2 shrink-0 rounded-full ${c.dot}`} aria-hidden="true" />
-                    {c.label}
-                  </a>
-                </li>
-              ))}
-            </ul>
+            <CategoryLinks categories={categories} linkClass={menuLink} />
           </nav>
         </details>
       </div>
@@ -156,24 +141,29 @@ const menuLink = `flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm text-
       var search = document.getElementById("site-search");
       document.addEventListener("keydown", function (e) {
         var t = e.target;
-        if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+        if (!search || e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
         if (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
         if (!search.offsetParent) return;
         e.preventDefault();
         search.focus();
       });
 
-      // Close open menus on Escape or a click outside them.
-      function closeMenus(except) {
-        document.querySelectorAll("details[data-menu][open]").forEach(function (d) {
-          if (d !== except) d.open = false;
-        });
+      // Close open menus on a click outside them, or on Escape (focus goes back to the menu button).
+      function openMenus() {
+        return document.querySelectorAll("details[data-menu][open]");
       }
       document.addEventListener("click", function (e) {
-        closeMenus(e.target.closest("details[data-menu]"));
+        var inside = e.target.closest("details[data-menu]");
+        openMenus().forEach(function (d) {
+          if (d !== inside) d.open = false;
+        });
       });
       document.addEventListener("keydown", function (e) {
-        if (e.key === "Escape") closeMenus(null);
+        if (e.key !== "Escape") return;
+        openMenus().forEach(function (d) {
+          d.open = false;
+          d.querySelector("summary").focus();
+        });
       });
     })();
   </script>

@@ -1,6 +1,6 @@
 // Display names and colors for the categories setting (see docs/UI-HANDOFF.md).
 // The list itself lives in settings; a category added there without an entry
-// here shows its slug in stone until code adds a label.
+// here shows its slug, capitalized and in stone, until code adds a label.
 
 /** Tailwind hues a category may use. Lime and emerald are reserved for brand and OK. */
 export type CategoryHue =
@@ -22,5 +22,6 @@ const CATEGORY_DISPLAY: Record<string, { label: string; hue: CategoryHue }> = {
 
 export function categoryDisplay(slug: string): { slug: string; label: string; hue: CategoryHue } {
   const known = Object.hasOwn(CATEGORY_DISPLAY, slug) ? CATEGORY_DISPLAY[slug] : undefined;
-  return { slug, label: known?.label ?? slug, hue: known?.hue ?? "stone" };
+  const fallback = slug.charAt(0).toUpperCase() + slug.slice(1).replace(/-/g, " ");
+  return { slug, label: known?.label ?? fallback, hue: known?.hue ?? "stone" };
 }

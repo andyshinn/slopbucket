@@ -20,12 +20,8 @@
 
   --color-brand-50: var(--color-lime-50);
   --color-brand-100: var(--color-lime-100);
-  --color-brand-200: var(--color-lime-200);
-  --color-brand-300: var(--color-lime-300);
-  --color-brand-400: var(--color-lime-400);
   --color-brand-600: var(--color-lime-600);
   --color-brand-700: var(--color-lime-700);
-  --color-brand-950: var(--color-lime-950);
 }
 
 /* The home page's highlighter band behind a word. */
