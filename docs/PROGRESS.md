@@ -2,7 +2,7 @@
 
 Where Slop Bucket stands, so a new session can pick up without the chat history. Update this file in each PR that moves the launch plan, changes what's next, or resolves an open issue.
 
-**Last updated:** 2026-10-11 (public site step 4: tool page, reports, rate limits)
+**Last updated:** 2026-10-11 (admin Reports page)
 
 ## Resuming in a new session
 
@@ -32,8 +32,8 @@ Built outside the plan's step list, all needed before launch: the daily trending
 3. **Review the queue** as it fills. Use Tools → Merge for duplicate tools. Mark good decisions as few-shot examples.
 4. **Build while the backfill runs:**
    - ~~Queue page improvements~~: done (Resolves to box, tag chips, reason quote, lime Approve).
-   - **The public site**, following the handoff's suggested build order. Steps 1 (tokens, layout, theme, `/about`), 2 (home trending list, rows, `/avatar/[owner]`, 5-minute edge cache) 3 (filters with faceted counts, sort, `/search`, `/new`, `/category/[name]`, the phone filter dialog) and 4 (tool pages with merge redirects, the report form, per-IP rate limits) are done. **Next:** turn on reports (Turnstile, below), then step 5, the admin restyle and the Reports admin page (step 8 in the handoff), since reports now arrive. Merge redirects (301 from a merged tool's slug) are part of the tool page.
-   - **Reports page** (admin); only matters once the public site is up.
+   - **The public site**, following the handoff's suggested build order. Steps 1 (tokens, layout, theme, `/about`), 2 (home trending list, rows, `/avatar/[owner]`, 5-minute edge cache) 3 (filters with faceted counts, sort, `/search`, `/new`, `/category/[name]`, the phone filter dialog) and 4 (tool pages with merge redirects, the report form, per-IP rate limits) are done. The admin Reports page (handoff step 8) is done too. **Next:** turn on reports (Turnstile, below), then step 5, the admin restyle (new nav, queue item polish, lime Approve). Merge redirects (301 from a merged tool's slug) are part of the tool page.
+   - ~~Reports page (admin)~~: done.
 5. **Step 7 tuning** against the backfilled data, then **step 8**: lower `review_threshold`, re-classify unreviewed posts so confident ones auto-publish, and go public.
 
 ## Open issues
@@ -41,7 +41,7 @@ Built outside the plan's step list, all needed before launch: the daily trending
 - **Trending cron didn't run on Oct 9.** `source_runs` has only the manual trending run from Oct 8 20:49 UTC, and nothing from the 07:00 UTC cron on Oct 9, although the 06:00 fetch ran. Check tomorrow's 07:00 run on `sb-ingest`; if it's missing again, check the deployed cron triggers and the ingest logs.
 - **Rename cleanup failed.** The `rename.yml` "cleanup" run on Oct 9 23:55 failed with R2 429 (rate limited) while deleting `radar-articles` objects. Re-run cleanup; already-deleted objects return 404, which the script ignores. Afterwards, delete `rename.yml` and `.github/scripts/copy-data.mjs`.
 - **Unmerged commit:** `649a841` ("Attach slopbucket.app in the dashboard instead of wrangler routes") sits on `rename-slop-bucket` after #17 merged. Decide whether it's still wanted.
-- **Reports are off until Turnstile is set up:** create a Turnstile widget for `slopbucket.app` in the Cloudflare dashboard, then add its site key and secret to the `sb-site` Worker as the secrets `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY`: either in the dashboard (Workers & Pages → sb-site → Settings → Variables and Secrets, type **Secret**, since deploys remove plain-text variables that aren't in `wrangler.jsonc`), or as repo secrets copied over with `ops.yml` → set-secret (worker: site). Reports land in the `reports` table; there's no admin page for them yet.
+- **Reports are off until Turnstile is set up:** create a Turnstile widget for `slopbucket.app` in the Cloudflare dashboard, then add its site key and secret to the `sb-site` Worker as the secrets `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY`: either in the dashboard (Workers & Pages → sb-site → Settings → Variables and Secrets, type **Secret**, since deploys remove plain-text variables that aren't in `wrangler.jsonc`), or as repo secrets copied over with `ops.yml` → set-secret (worker: site). Reports show on Admin → Reports.
 - **Re-classify operation never marked finished:** operation 1 has `finished_at` NULL, because finishing is written lazily when the Status page loads. It should close on the next Status view. If it doesn't, check `reclassifyProgress`.
 
 ## Production snapshot (2026-10-09)
