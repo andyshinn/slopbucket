@@ -2,7 +2,7 @@
 
 Where Slop Bucket stands, so a new session can pick up without the chat history. Update this file in each PR that moves the launch plan, changes what's next, or resolves an open issue.
 
-**Last updated:** 2026-10-11 (queue page improvements)
+**Last updated:** 2026-10-11 (public site step 1: tokens, layout, theme)
 
 ## Resuming in a new session
 
@@ -32,7 +32,7 @@ Built outside the plan's step list, all needed before launch: the daily trending
 3. **Review the queue** as it fills. Use Tools → Merge for duplicate tools. Mark good decisions as few-shot examples.
 4. **Build while the backfill runs:**
    - ~~Queue page improvements~~: done (Resolves to box, tag chips, reason quote, lime Approve).
-   - **The public site** (next build), following the handoff's suggested build order: tokens, layout and category labels first, then the trending list, tool pages, search and filters. Merge redirects (301 from a merged tool's slug) are part of the tool page.
+   - **The public site**, following the handoff's suggested build order. Step 1 (tokens, fonts, logo, header, footer, theme toggle, category labels and hues, `/about`) is done. **Next: step 2**, the home trending list, the row component and the avatar route. Then search and filters (with `/new` and `/category/[name]`, which the header already links to), then tool pages. Merge redirects (301 from a merged tool's slug) are part of the tool page.
    - **Reports page** (admin); only matters once the public site is up.
 5. **Step 7 tuning** against the backfilled data, then **step 8**: lower `review_threshold`, re-classify unreviewed posts so confident ones auto-publish, and go public.
 
@@ -41,6 +41,7 @@ Built outside the plan's step list, all needed before launch: the daily trending
 - **Trending cron didn't run on Oct 9.** `source_runs` has only the manual trending run from Oct 8 20:49 UTC, and nothing from the 07:00 UTC cron on Oct 9, although the 06:00 fetch ran. Check tomorrow's 07:00 run on `sb-ingest`; if it's missing again, check the deployed cron triggers and the ingest logs.
 - **Rename cleanup failed.** The `rename.yml` "cleanup" run on Oct 9 23:55 failed with R2 429 (rate limited) while deleting `radar-articles` objects. Re-run cleanup; already-deleted objects return 404, which the script ignores. Afterwards, delete `rename.yml` and `.github/scripts/copy-data.mjs`.
 - **Unmerged commit:** `649a841` ("Attach slopbucket.app in the dashboard instead of wrangler routes") sits on `rename-slop-bucket` after #17 merged. Decide whether it's still wanted.
+- **Header links ahead of their pages:** the public header links to `/new`, `/category/[name]` and `/search`, which 404 until step 3 builds them.
 - **Re-classify operation never marked finished:** operation 1 has `finished_at` NULL, because finishing is written lazily when the Status page loads. It should close on the next Status view. If it doesn't, check `reclassifyProgress`.
 
 ## Production snapshot (2026-10-09)
@@ -64,6 +65,8 @@ Built outside the plan's step list, all needed before launch: the daily trending
 - **Tags:** Option C (four groups, Interface overlaps categories on purpose). Languages come from GitHub stats, not tags.
 - **UI:** Tailwind v4, Heroicons, Tailwind Plus Elements only when JS is needed. No React. The admin ships no JavaScript.
 - **Naming:** Slop Bucket at slopbucket.app, `sb-*` resources, `@slop-bucket/*` packages.
+- **Logo:** the round-3 pail pig (`docs/brand/logo-concepts/pail-pig-round-3/`): the lime variant on light pages, the dark variant in dark mode, and the lime favicon. Copies without the C2PA metadata are in `apps/site/public/`.
+- **Brand token:** `brand-*` is lime for the admin too, so primary buttons use the lime fill with `lime-950` text (white on lime fails contrast).
 
 ## Gotchas
 

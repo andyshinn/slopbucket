@@ -1,0 +1,35 @@
+---
+import { getSetting } from "@slop-bucket/core";
+import { env } from "cloudflare:workers";
+import Public from "../layouts/Public.astro";
+
+const w = await getSetting(env.DB, "trending_weights");
+
+const h2 = "text-xl font-bold tracking-tight";
+const p = "mt-3 text-stone-600 dark:text-stone-300";
+---
+
+<Public title="About · Slop Bucket" description="What Slop Bucket is and how it ranks AI dev tools.">
+  <article class="mx-auto max-w-2xl px-4 py-12 sm:px-6">
+    <h1 class="text-4xl font-bold tracking-tight">About</h1>
+    <p class={p}>
+      Slop Bucket is an index of AI dev tools: coding agents, AI editors and CLIs, add-ons for coding agents, and MCP servers. Every morning it reads Hacker News, lobste.rs and GitHub,
+      keeps the posts about a specific tool, and groups them into one page per tool. Roundups, model news and SDKs for building LLM apps get tossed.
+    </p>
+    <p class={p}>An open model sorts the posts, and a person reviews what it isn't sure about.</p>
+
+    <h2 id="ranking" class={`mt-10 scroll-mt-6 ${h2}`}>How ranking works</h2>
+    <p class={p}>Trending is recomputed once a day. A tool ranks higher when:</p>
+    <ul class="mt-3 list-disc space-y-1 pl-5 text-stone-600 dark:text-stone-300">
+      <li>more sources posted about it in the last 14 days,</li>
+      <li>those posts got more upvotes and comments,</li>
+      <li>its GitHub repo gained more stars in the last 7 days.</li>
+    </ul>
+    <p class={p}>
+      The total is divided by how long ago the latest post was, so a tool fades unless people keep talking about it. Closed-source tools have no stars, so they rank on posts alone.
+    </p>
+    <p class="mt-3 font-mono text-xs text-stone-500 dark:text-stone-400">
+      score = ({w.w_s} × sources + {w.w_e} × ln(1 + upvotes + 2 × comments) + {w.w_g} × ln(1 + stars gained)) / (hours since last post + 2)^{w.g}
+    </p>
+  </article>
+</Public>

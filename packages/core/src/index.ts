@@ -1,3 +1,4 @@
+export * from "./categories.ts";
 export * from "./classification.ts";
 export * from "./jobs.ts";
 export * from "./names.ts";

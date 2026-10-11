@@ -1,0 +1,23 @@
+---
+import type { categoryStyle } from "../lib/categories.ts";
+
+interface Props {
+  categories: ReturnType<typeof categoryStyle>[];
+  /** Classes for each link. */
+  linkClass: string;
+}
+const { categories, linkClass } = Astro.props;
+---
+
+<ul>
+  {
+    categories.map((c) => (
+      <li>
+        <a href={`/category/${c.slug}`} class={linkClass}>
+          <span class={`size-2 shrink-0 rounded-full ${c.dot}`} aria-hidden="true" />
+          {c.label}
+        </a>
+      </li>
+    ))
+  }
+</ul>

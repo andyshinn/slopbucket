@@ -1,0 +1,170 @@
+---
+import { getSetting } from "@slop-bucket/core";
+import { env } from "cloudflare:workers";
+import CategoryLinks from "../components/CategoryLinks.astro";
+import Icon from "../components/Icon.astro";
+import { categoryStyle } from "../lib/categories.ts";
+import Base from "./Base.astro";
+
+interface Props {
+  title: string;
+  description?: string;
+  /** Which top nav item is active. */
+  nav?: "trending" | "new" | "categories";
+  /** Prefills the header search field. */
+  query?: string;
+}
+const { title, description, nav, query = "" } = Astro.props;
+const categories = (await getSetting(env.DB, "categories")).map(categoryStyle);
+
+const focusRing = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime-600 dark:focus-visible:outline-lime-400";
+const navItem = (active: boolean) =>
+  `inline-flex min-h-9 items-center gap-1 rounded-full px-3 text-sm font-medium ${focusRing} ${
+    active ? "bg-lime-400 text-lime-950" : "text-stone-600 hover:bg-stone-100 hover:text-stone-900 dark:text-stone-300 dark:hover:bg-stone-800 dark:hover:text-stone-50"
+  }`;
+const iconButton = `inline-flex size-11 items-center justify-center rounded-lg text-stone-600 hover:bg-stone-100 hover:text-stone-900 dark:text-stone-300 dark:hover:bg-stone-800 dark:hover:text-stone-50 ${focusRing}`;
+const menuPanel = "absolute z-20 mt-2 rounded-xl bg-white p-2 shadow-lg ring-1 ring-stone-200 dark:bg-stone-900 dark:ring-stone-800";
+const menuLink = `flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm text-stone-900 hover:bg-stone-100 dark:text-stone-50 dark:hover:bg-stone-800 ${focusRing}`;
+---
+
+<Base
+  title={title}
+  description={description}
+  htmlClass="bg-stone-50 dark:bg-stone-950 dark:[color-scheme:dark]"
+  bodyClass="flex min-h-full flex-col font-sans text-stone-900 dark:text-stone-50"
+>
+  <script is:inline slot="head">
+    // Before first paint: a saved choice wins, else the OS setting.
+    (function () {
+      var saved = null;
+      try {
+        saved = localStorage.getItem("theme");
+      } catch (e) {}
+      var dark = saved ? saved === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+      document.documentElement.classList.toggle("dark", dark);
+    })();
+  </script>
+
+  <a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-30 focus:rounded-lg focus:bg-lime-400 focus:px-3 focus:py-2 focus:text-lime-950">
+    Skip to content
+  </a>
+
+  <header class="border-b border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-900">
+    <div class="mx-auto flex h-16 max-w-7xl items-center gap-4 px-4 sm:px-6">
+      <a href="/" class={`shrink-0 rounded-md ${focusRing}`}>
+        <img src="/logo.svg" alt="Slop Bucket" width="145" height="32" class="h-8 w-auto dark:hidden" />
+        <img src="/logo-dark.svg" alt="Slop Bucket" width="145" height="32" class="hidden h-8 w-auto dark:block" />
+      </a>
+
+      <nav class="hidden items-center gap-1 md:flex" aria-label="Main">
+        <a href="/" class={navItem(nav === "trending")} aria-current={nav === "trending" ? "page" : undefined}>Trending</a>
+        <a href="/new" class={navItem(nav === "new")} aria-current={nav === "new" ? "page" : undefined}>New</a>
+        <details class="relative" data-menu>
+          <summary class={`${navItem(nav === "categories")} cursor-pointer list-none [&::-webkit-details-marker]:hidden`}>
+            Categories <Icon name="chevronDown" class="size-4" />
+          </summary>
+          <div class={`${menuPanel} w-64`}>
+            <CategoryLinks categories={categories} linkClass={menuLink} />
+          </div>
+        </details>
+      </nav>
+
+      <div class="ml-auto flex items-center gap-1">
+        <form action="/search" method="get" role="search" class="relative hidden md:block">
+          <label for="site-search" class="sr-only">Search tools</label>
+          <Icon name="magnifyingGlass" class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-stone-500 dark:text-stone-400" />
+          <input
+            id="site-search"
+            name="q"
+            type="search"
+            value={query}
+            placeholder="Search tools"
+            class="block h-10 w-64 rounded-lg bg-white pr-10 pl-9 text-sm text-stone-900 outline-1 -outline-offset-1 outline-stone-300 placeholder:text-stone-500 focus:outline-2 focus:-outline-offset-2 focus:outline-lime-600 lg:w-72 dark:bg-stone-900 dark:text-stone-50 dark:outline-stone-700 dark:placeholder:text-stone-400 dark:focus:outline-lime-400"
+          />
+          <kbd class="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded border border-stone-300 px-1.5 font-mono text-xs text-stone-500 dark:border-stone-700 dark:text-stone-400" aria-hidden="true">/</kbd>
+        </form>
+
+        <a href="/search" class={`${iconButton} md:hidden`} aria-label="Search tools">
+          <Icon name="magnifyingGlass" />
+        </a>
+        <button type="button" id="theme-toggle" class={iconButton} aria-label="Switch to dark theme">
+          <Icon name="moon" class="size-5 dark:hidden" />
+          <Icon name="sun" class="hidden size-5 dark:block" />
+        </button>
+
+        <details class="relative md:hidden" data-menu>
+          <summary class={`${iconButton} cursor-pointer list-none [&::-webkit-details-marker]:hidden`} aria-label="Menu">
+            <Icon name="bars3" />
+          </summary>
+          <nav class={`${menuPanel} right-0 max-h-[80vh] w-72 overflow-y-auto`} aria-label="Menu">
+            <a href="/" class={menuLink} aria-current={nav === "trending" ? "page" : undefined}>Trending</a>
+            <a href="/new" class={menuLink} aria-current={nav === "new" ? "page" : undefined}>New</a>
+            <p class="mt-2 px-3 py-2 font-mono text-xs tracking-widest text-stone-500 uppercase dark:text-stone-400">Categories</p>
+            <CategoryLinks categories={categories} linkClass={menuLink} />
+          </nav>
+        </details>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="flex-1">
+    <slot />
+  </main>
+
+  <footer class="border-t border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-900">
+    <div class="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-8 text-sm text-stone-600 sm:px-6 md:flex-row md:items-center md:justify-between dark:text-stone-300">
+      <p class="max-w-xl">Slop Bucket reads Hacker News, lobste.rs and GitHub every morning, keeps the AI dev tools and tosses the rest.</p>
+      <ul class="flex gap-6">
+        <li><a href="/about#ranking" class={`rounded font-medium text-lime-700 hover:underline dark:text-lime-400 ${focusRing}`}>How ranking works</a></li>
+        <li><a href="/about" class={`rounded font-medium text-lime-700 hover:underline dark:text-lime-400 ${focusRing}`}>About</a></li>
+      </ul>
+    </div>
+  </footer>
+
+  <script is:inline>
+    (function () {
+      var root = document.documentElement;
+      var toggle = document.getElementById("theme-toggle");
+      function label() {
+        toggle.setAttribute("aria-label", root.classList.contains("dark") ? "Switch to light theme" : "Switch to dark theme");
+      }
+      label();
+      toggle.addEventListener("click", function () {
+        var dark = root.classList.toggle("dark");
+        try {
+          localStorage.setItem("theme", dark ? "dark" : "light");
+        } catch (e) {}
+        label();
+      });
+
+      // "/" focuses the search field when nothing else is being typed in.
+      var search = document.getElementById("site-search");
+      document.addEventListener("keydown", function (e) {
+        var t = e.target;
+        if (!search || e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+        if (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+        if (!search.offsetParent) return;
+        e.preventDefault();
+        search.focus();
+      });
+
+      // Close open menus on a click outside them, or on Escape (focus goes back to the menu button).
+      function openMenus() {
+        return document.querySelectorAll("details[data-menu][open]");
+      }
+      document.addEventListener("click", function (e) {
+        var inside = e.target.closest("details[data-menu]");
+        openMenus().forEach(function (d) {
+          if (d !== inside) d.open = false;
+        });
+      });
+      document.addEventListener("keydown", function (e) {
+        if (e.key !== "Escape") return;
+        openMenus().forEach(function (d) {
+          d.open = false;
+          d.querySelector("summary").focus();
+        });
+      });
+    })();
+  </script>
+</Base>
