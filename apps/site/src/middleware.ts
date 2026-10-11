@@ -1,7 +1,8 @@
 import { defineMiddleware } from "astro:middleware";
 import { env } from "cloudflare:workers";
 import { guardAdmin, isAdminPath } from "./lib/access.ts";
-import { cacheableCopy, edgeCache, isCacheablePath, pageCacheKey, tooManyRequests, withinLimit } from "./lib/edge-cache.ts";
+import { cacheableCopy, edgeCache, isCacheablePath, pageCacheKey } from "./lib/edge-cache.ts";
+import { tooManyRequests, withinLimit } from "./lib/rate-limit.ts";
 
 export const onRequest = defineMiddleware(async (context, next) => {
   if (!isAdminPath(context.url.pathname)) {

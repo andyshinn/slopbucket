@@ -25,7 +25,16 @@ export interface TimelinePost {
   comments: number | null;
 }
 
-export type ToolLookup = { tool: ToolDetail; posts: TimelinePost[] } | { redirect: string } | null;
+/** The timeline shows at most this many posts, newest first. */
+export const TIMELINE_LIMIT = 100;
+
+/** The tool's earliest published post, for "First spotted". */
+export interface FirstPost {
+  source: string;
+  posted_at: string;
+}
+
+export type ToolLookup = { tool: ToolDetail; posts: TimelinePost[]; firstPost: FirstPost | null } | { redirect: string } | null;
 
 /** Follows active merges from a hidden tool to the published tool that absorbed it (a few hops at most). */
 async function mergeTarget(db: D1Database, toolId: number): Promise<string | null> {
@@ -49,10 +58,10 @@ async function mergeTarget(db: D1Database, toolId: number): Promise<string | nul
 export async function lookupTool(db: D1Database, slug: string): Promise<ToolLookup> {
   const row = await db
     .prepare(
-      `SELECT ${ROW_COLUMNS}, t.status, t.homepage_url, t.first_seen_at,
-        (SELECT r.license FROM repo_snapshots r WHERE r.tool_id = t.id ORDER BY r.date DESC LIMIT 1) AS license,
-        (SELECT r.language FROM repo_snapshots r WHERE r.tool_id = t.id ORDER BY r.date DESC LIMIT 1) AS language
-       FROM tools t WHERE t.slug = ?`,
+      `SELECT ${ROW_COLUMNS}, t.status, t.homepage_url, t.first_seen_at, r.license, r.language
+       FROM tools t
+       LEFT JOIN repo_snapshots r ON r.tool_id = t.id AND r.date = (SELECT max(date) FROM repo_snapshots WHERE tool_id = t.id)
+       WHERE t.slug = ?`,
     )
     .bind(slug)
     .first<RawRow & { status: string; homepage_url: string | null; first_seen_at: string; license: string | null; language: string | null }>();
@@ -62,16 +71,24 @@ export async function lookupTool(db: D1Database, slug: string): Promise<ToolLook
     return target ? { redirect: `/tools/${target}` } : null;
   }
   const { status, homepage_url, first_seen_at, license, language, ...raw } = row;
-  const { results } = await db
-    .prepare(
-      `SELECT p.id, p.source, p.external_id, p.url, p.title, p.author, p.posted_at, p.post_type, p.version,
-        (SELECT s.score FROM post_snapshots s WHERE s.post_id = p.id ORDER BY s.date DESC LIMIT 1) AS score,
-        (SELECT s.comments FROM post_snapshots s WHERE s.post_id = p.id ORDER BY s.date DESC LIMIT 1) AS comments
-       FROM posts p WHERE p.tool_id = ? AND p.status = 'published' ORDER BY p.posted_at DESC, p.id DESC LIMIT 100`,
-    )
-    .bind(row.id)
-    .all<TimelinePost>();
-  return { tool: { ...toRow(raw), homepage_url, first_seen_at, license, language }, posts: results };
+  const [timeline, first] = await db.batch<Record<string, unknown>>([
+    db
+      .prepare(
+        `SELECT p.id, p.source, p.external_id, p.url, p.title, p.author, p.posted_at, p.post_type, p.version, s.score, s.comments
+         FROM posts p
+         LEFT JOIN post_snapshots s ON s.post_id = p.id AND s.date = (SELECT max(date) FROM post_snapshots WHERE post_id = p.id)
+         WHERE p.tool_id = ? AND p.status = 'published' ORDER BY p.posted_at DESC, p.id DESC LIMIT ?`,
+      )
+      .bind(row.id, TIMELINE_LIMIT),
+    db
+      .prepare("SELECT source, posted_at FROM posts WHERE tool_id = ? AND status = 'published' ORDER BY posted_at, id LIMIT 1")
+      .bind(row.id),
+  ]);
+  return {
+    tool: { ...toRow(raw), homepage_url, first_seen_at, license, language },
+    posts: timeline!.results as unknown as TimelinePost[],
+    firstPost: (first!.results[0] as unknown as FirstPost | undefined) ?? null,
+  };
 }
 
 /** The source's own discussion page for a post, when there is one. */

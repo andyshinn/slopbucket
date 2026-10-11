@@ -1,7 +1,6 @@
 ---
 import { env } from "cloudflare:workers";
 import Public from "../../../layouts/Public.astro";
-import { clientIp } from "../../../lib/edge-cache.ts";
 import { NOTE_MAX, REPORT_REASONS, ReportError, submitReport } from "../../../lib/reports.ts";
 import { lookupTool } from "../../../lib/tool-page.ts";
 
@@ -10,7 +9,8 @@ import { lookupTool } from "../../../lib/tool-page.ts";
 const slug = Astro.params.slug ?? "";
 const found = await lookupTool(env.DB, slug);
 if (!found) return new Response("Not found", { status: 404 });
-if ("redirect" in found) return Astro.redirect(`${found.redirect}/report`, 301);
+// 308 keeps a POST a POST, so a report sent to a just-merged slug still arrives.
+if ("redirect" in found) return Astro.redirect(`${found.redirect}/report`, Astro.request.method === "GET" ? 301 : 308);
 const { tool } = found;
 
 const secrets = env as unknown as { TURNSTILE_SITE_KEY?: string; TURNSTILE_SECRET_KEY?: string };
@@ -20,9 +20,10 @@ let sent = false;
 let error: string | null = null;
 let form: FormData | null = null;
 if (Astro.request.method === "POST") {
-  form = await Astro.request.formData();
   try {
-    await submitReport(env.DB, tool.id, form, clientIp(Astro.request), {
+    // Read once for re-filling the form on an error; submitReport parses its own copy.
+    form = await Astro.request.clone().formData().catch(() => null);
+    await submitReport(env.DB, tool.id, Astro.request, {
       turnstileSecret: secrets.TURNSTILE_SECRET_KEY,
       limiter: env.REPORT_LIMITER,
     });

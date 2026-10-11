@@ -1,6 +1,8 @@
 // Visitor reports from tool pages: validated, protected by Turnstile and a
 // per-IP rate limit, stored in `reports` for the admin.
 
+import { clientIp, withinLimit } from "./rate-limit.ts";
+
 export const REPORT_REASONS = {
   "not-ai-tool": { label: "Not an AI coding tool", hint: "It isn't an AI dev tool, or it's an article, list or model." },
   "wrong-merge": { label: "Wrong merge", hint: "Two different tools ended up on one page." },
@@ -43,17 +45,22 @@ export async function verifyTurnstile(secret: string, token: string, ip: string 
   }
 }
 
-/** Validates and stores a report from the form. Throws ReportError with an HTTP status. */
-export async function submitReport(db: D1Database, toolId: number, form: FormData, ip: string | null, deps: ReportDeps): Promise<void> {
+/** Validates and stores a report posted as a form. Throws ReportError with an HTTP status. */
+export async function submitReport(db: D1Database, toolId: number, request: Request, deps: ReportDeps): Promise<void> {
   if (!deps.turnstileSecret) throw new ReportError("Reports aren't switched on yet.", 503);
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch {
+    throw new ReportError("That didn't look like a form submission.", 400);
+  }
   const reason = String(form.get("reason") ?? "");
   if (!Object.hasOwn(REPORT_REASONS, reason)) throw new ReportError("Pick a reason.", 422);
   const note = String(form.get("note") ?? "").trim();
   if (note.length > NOTE_MAX) throw new ReportError(`Keep the note under ${NOTE_MAX} characters.`, 422);
-  if (deps.limiter && !(await deps.limiter.limit({ key: `report:${ip ?? "unknown"}` })).success) {
-    throw new ReportError("That's a lot of reports. Try again in a minute.", 429);
-  }
-  const human = await verifyTurnstile(deps.turnstileSecret, String(form.get("cf-turnstile-response") ?? ""), ip, deps.fetcher);
+  // Turnstile first: a bot without a token can't use up a shared IP's report limit.
+  const human = await verifyTurnstile(deps.turnstileSecret, String(form.get("cf-turnstile-response") ?? ""), clientIp(request), deps.fetcher);
   if (!human) throw new ReportError("The bot check didn't pass. Try again.", 400);
+  if (!(await withinLimit(deps.limiter, request, "report"))) throw new ReportError("That's a lot of reports. Try again in a minute.", 429);
   await db.prepare("INSERT INTO reports (tool_id, reason, note) VALUES (?, ?, ?)").bind(toolId, reason, note || null).run();
 }

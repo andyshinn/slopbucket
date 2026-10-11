@@ -7,13 +7,13 @@ import ToolAvatar from "../../../components/ToolAvatar.astro";
 import Public from "../../../layouts/Public.astro";
 import { categoryStyle } from "../../../lib/categories.ts";
 import { compactNumber } from "../../../lib/public.ts";
-import { engagement, lookupTool, threadUrl } from "../../../lib/tool-page.ts";
+import { TIMELINE_LIMIT, engagement, lookupTool, threadUrl } from "../../../lib/tool-page.ts";
 import { SOURCE_LABELS, githubHref, hostname, safeHref } from "../../../lib/ui.ts";
 
 const found = await lookupTool(env.DB, Astro.params.slug ?? "");
 if (!found) return new Response("Not found", { status: 404 });
 if ("redirect" in found) return Astro.redirect(found.redirect, 301);
-const { tool, posts } = found;
+const { tool, posts, firstPost } = found;
 const tagGroups = await getSetting(env.DB, "tags");
 
 const category = categoryStyle(tool.category);
@@ -23,7 +23,8 @@ const homepage = safeHref(tool.homepage_url);
 const repo = githubHref(tool.github_repo);
 const date = (iso: string, year = false) =>
   new Date(iso).toLocaleDateString("en", { month: "short", day: "numeric", ...(year ? { year: "numeric" } : {}), timeZone: "UTC" });
-const oldest = posts.at(-1);
+// Homepage, repo and post links come from classified third-party posts: never pass them ranking.
+const EXTERNAL = "noopener nofollow ugc";
 const TYPE_LABELS: Record<string, string> = { launch: "Launch", release: "Release", discussion: "Discussion", news: "News" };
 const glance: [string, string, string | null][] = [];
 if (tool.is_open_source !== false && tool.stars !== null) {
@@ -90,12 +91,12 @@ const link = "font-medium text-lime-700 hover:underline dark:text-lime-400";
           (homepage || repo) && (
             <div class="mt-6 flex flex-wrap gap-3">
               {homepage && (
-                <a href={homepage} rel="noopener" class={`${button} bg-lime-400 text-lime-950 hover:bg-lime-300`}>
+                <a href={homepage} rel={EXTERNAL} class={`${button} bg-lime-400 text-lime-950 hover:bg-lime-300`}>
                   Visit {hostname(homepage)} <Icon name="arrowTopRight" class="size-4" />
                 </a>
               )}
               {repo && (
-                <a href={repo} rel="noopener" class={`${button} bg-white ring-1 ring-stone-300 ring-inset hover:bg-stone-100 dark:bg-stone-900 dark:ring-stone-700 dark:hover:bg-stone-800`}>
+                <a href={repo} rel={EXTERNAL} class={`${button} bg-white ring-1 ring-stone-300 ring-inset hover:bg-stone-100 dark:bg-stone-900 dark:ring-stone-700 dark:hover:bg-stone-800`}>
                   <Icon name="codeBracket" class="size-4" /> View source
                 </a>
               )}
@@ -137,7 +138,7 @@ const link = "font-medium text-lime-700 hover:underline dark:text-lime-400";
                     </p>
                     <h3 class="mt-1 font-semibold break-words">
                       {href ? (
-                        <a href={href} rel="noopener nofollow" class="hover:underline">
+                        <a href={href} rel={EXTERNAL} class="hover:underline">
                           {p.title}
                         </a>
                       ) : (
@@ -152,7 +153,7 @@ const link = "font-medium text-lime-700 hover:underline dark:text-lime-400";
                     </p>
                     {thread && (
                       <p class="mt-2 text-sm">
-                        <a href={thread.href} rel="noopener" class={link}>
+                        <a href={thread.href} rel={EXTERNAL} class={link}>
                           {thread.label}
                         </a>
                       </p>
@@ -164,7 +165,8 @@ const link = "font-medium text-lime-700 hover:underline dark:text-lime-400";
           }
         </ol>
         <p class="mt-6 font-mono text-xs text-stone-500 dark:text-stone-400">
-          {oldest ? `First spotted ${date(oldest.posted_at, true)} on ${SOURCE_LABELS[oldest.source] ?? oldest.source}` : `First spotted ${date(tool.first_seen_at, true)}`}
+          {posts.length === TIMELINE_LIMIT && tool.posts > TIMELINE_LIMIT && `Showing the latest ${TIMELINE_LIMIT} of ${tool.posts.toLocaleString("en")} posts. `}
+          {firstPost ? `First spotted ${date(firstPost.posted_at, true)} on ${SOURCE_LABELS[firstPost.source] ?? firstPost.source}` : `First spotted ${date(tool.first_seen_at, true)}`}
         </p>
       </section>
 
@@ -178,7 +180,7 @@ const link = "font-medium text-lime-700 hover:underline dark:text-lime-400";
                   <dt class="text-stone-500 dark:text-stone-400">{label}</dt>
                   <dd class="min-w-0 truncate text-right font-medium">
                     {href ? (
-                      <a href={href} rel="noopener" class={link}>
+                      <a href={href} rel={EXTERNAL} class={link}>
                         {value}
                       </a>
                     ) : (

@@ -178,7 +178,7 @@ describe("edge cache", () => {
 
 describe("rate limits", () => {
   it("allows without a limiter, and keys the limiter by IP", async () => {
-    const { withinLimit, tooManyRequests } = await import("../src/lib/edge-cache.ts");
+    const { withinLimit, tooManyRequests } = await import("../src/lib/rate-limit.ts");
     const req = new Request("https://slopbucket.app/", { headers: { "cf-connecting-ip": "203.0.113.9" } });
     expect(await withinLimit(undefined, req)).toBe(true);
     const keys: string[] = [];

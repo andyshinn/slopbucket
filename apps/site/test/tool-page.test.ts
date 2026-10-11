@@ -40,6 +40,7 @@ describe("lookupTool", () => {
     const posts = found && "posts" in found ? found.posts : [];
     expect(posts.map((p) => p.post_type)).toEqual(["release", "launch"]);
     expect(posts[1]).toMatchObject({ score: 686, comments: 7 });
+    expect(found && "firstPost" in found && found.firstPost).toEqual({ source: "hn", posted_at: "2026-10-01T00:00:00Z" });
   });
 
   it("redirects a merged tool to its target, following chains, and 404s the rest", async () => {
@@ -78,37 +79,44 @@ describe("timeline helpers", () => {
 });
 
 describe("reports", () => {
-  const form = (o: Record<string, string>) => {
+  const post = (o: Record<string, string>, ip = "203.0.113.9") => {
     const f = new FormData();
     for (const [k, v] of Object.entries(o)) f.set(k, v);
-    return f;
+    return new Request("https://slopbucket.app/tools/pi/report", { method: "POST", body: f, headers: { "cf-connecting-ip": ip } });
   };
   const ok = (async () => Response.json({ success: true })) as typeof fetch;
   const fail = (async () => Response.json({ success: false })) as typeof fetch;
-  const valid = form({ reason: "spam", note: " Buy now ", "cf-turnstile-response": "token" });
+  const valid = { reason: "spam", note: " Buy now ", "cf-turnstile-response": "token" };
 
   it("stores a valid report", async () => {
     const id = await tool("pi");
-    await submitReport(db, id, valid, "203.0.113.9", { turnstileSecret: "s", fetcher: ok });
+    await submitReport(db, id, post(valid), { turnstileSecret: "s", fetcher: ok });
     expect(await db.prepare("SELECT reason, note, resolved_at FROM reports").first()).toEqual({ reason: "spam", note: "Buy now", resolved_at: null });
   });
 
-  it("refuses when off, invalid, rate limited or failing the bot check", async () => {
+  it("refuses when off, malformed, invalid, failing the bot check or rate limited", async () => {
     const id = await tool("pi");
-    const status = async (f: FormData, deps: Parameters<typeof submitReport>[4]) => {
+    const status = async (req: Request, deps: Parameters<typeof submitReport>[3]) => {
       try {
-        await submitReport(db, id, f, null, deps);
+        await submitReport(db, id, req, deps);
         return 200;
       } catch (err) {
         return err instanceof ReportError ? err.status : 500;
       }
     };
-    expect(await status(valid, { fetcher: ok })).toBe(503);
-    expect(await status(form({ reason: "nope", "cf-turnstile-response": "t" }), { turnstileSecret: "s", fetcher: ok })).toBe(422);
-    expect(await status(form({ reason: "spam", note: "x".repeat(501) }), { turnstileSecret: "s", fetcher: ok })).toBe(422);
-    const limiter = { limit: async () => ({ success: false }) } as unknown as RateLimit;
-    expect(await status(valid, { turnstileSecret: "s", fetcher: ok, limiter })).toBe(429);
-    expect(await status(valid, { turnstileSecret: "s", fetcher: fail })).toBe(400);
+    const on = { turnstileSecret: "s", fetcher: ok };
+    expect(await status(post(valid), { fetcher: ok })).toBe(503);
+    expect(await status(new Request("https://x.dev", { method: "POST", body: "{", headers: { "content-type": "application/json" } }), on)).toBe(400);
+    expect(await status(post({ reason: "nope", "cf-turnstile-response": "t" }), on)).toBe(422);
+    expect(await status(post({ reason: "spam", note: "x".repeat(501) }), on)).toBe(422);
+    expect(await status(post(valid), { turnstileSecret: "s", fetcher: fail })).toBe(400);
+    const keys: string[] = [];
+    const limiter = { limit: async ({ key }: { key: string }) => (keys.push(key), { success: false }) } as unknown as RateLimit;
+    expect(await status(post(valid), { ...on, limiter })).toBe(429);
+    expect(keys).toEqual(["report:203.0.113.9"]);
+    // A failed bot check doesn't count toward the limit.
+    await status(post(valid), { turnstileSecret: "s", fetcher: fail, limiter });
+    expect(keys).toHaveLength(1);
     expect(await db.prepare("SELECT count(*) AS n FROM reports").first("n")).toBe(0);
     expect(Object.keys(REPORT_REASONS)).toEqual(["not-ai-tool", "wrong-merge", "spam", "broken-link"]);
   });
