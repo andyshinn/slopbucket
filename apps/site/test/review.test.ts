@@ -5,12 +5,14 @@ import {
   approvePost,
   editPost,
   getQueueItem,
+  isNewTool,
   nextQueuedId,
   parseEditForm,
   queueCount,
   reassignPost,
   rejectPost,
   searchTools,
+  tagChips,
 } from "../src/lib/review.ts";
 
 const db = env.DB;
@@ -228,5 +230,32 @@ describe("searchTools", () => {
     expect((await searchTools(db, "patch")).map((t) => t.id)).toEqual([a]);
     expect((await searchTools(db, "review ag")).map((t) => t.id)).toEqual([a]);
     expect(await searchTools(db, '"; DROP TABLE tools; --')).toEqual([]);
+  });
+});
+
+describe("queue item display", () => {
+  const groups = [
+    { slug: "works-with", label: "Works with", hint: "", tags: [{ slug: "claude-code", label: "Claude Code" }] },
+    { slug: "platform", label: "Platform", hint: "", tags: [{ slug: "macos", label: "macOS" }] },
+  ];
+
+  it("labels vocabulary tags and marks the rest unknown", () => {
+    expect(tagChips(["macos", "rust", "claude-code", "macos", ""], groups)).toEqual([
+      { slug: "macos", label: "macOS", known: true },
+      { slug: "rust", label: "rust", known: false },
+      { slug: "claude-code", label: "Claude Code", known: true },
+    ]);
+    expect(tagChips(undefined, groups)).toEqual([]);
+    expect(tagChips("macos", groups)).toEqual([]);
+  });
+
+  it("calls a tool new when this queued post is its only one", async () => {
+    const id = await tool("Patchwork");
+    const first = await post(id);
+    expect(isNewTool((await getQueueItem(db, first))!.tool!)).toBe(true);
+    await post(id);
+    expect(isNewTool((await getQueueItem(db, first))!.tool!)).toBe(false);
+    const published = await tool("Shipped", { status: "published" });
+    expect(isNewTool((await getQueueItem(db, await post(published)))!.tool!)).toBe(false);
   });
 });

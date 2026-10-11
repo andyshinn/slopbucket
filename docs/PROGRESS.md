@@ -2,7 +2,7 @@
 
 Where Slop Bucket stands, so a new session can pick up without the chat history. Update this file in each PR that moves the launch plan, changes what's next, or resolves an open issue.
 
-**Last updated:** 2026-10-09 (after PR #17, the rename to Slop Bucket)
+**Last updated:** 2026-10-11 (queue page improvements)
 
 ## Resuming in a new session
 
@@ -23,7 +23,7 @@ Where Slop Bucket stands, so a new session can pick up without the chat history.
 | 7. Tune prompt, few-shot, categories, trending weights | Started early: classifier accuracy (#7), categories v3 (#11), tag vocabulary (#14) |
 | 8. Lower the threshold, go public | Not started. Needs the public site (below) |
 
-Built outside the plan's step list, all needed before launch: the daily trending job (#12), classify concurrency (#13), the admin Tools page with merge and split (#15, #16), and the rename to Slop Bucket (#17).
+Built outside the plan's step list, all needed before launch: the daily trending job (#12), classify concurrency (#13), the admin Tools page with merge and split (#15, #16), the rename to Slop Bucket (#17), and the queue page improvements from the UI handoff.
 
 ## Next steps, in order
 
@@ -31,8 +31,8 @@ Built outside the plan's step list, all needed before launch: the daily trending
 2. **Start the 90-day backfill:** Status → Backfill, all sources, 90 days. That's about 28,000 posts and $11. The $2/day AI Gateway cap spreads it over about 5 days, and the In progress card shows progress.
 3. **Review the queue** as it fills. Use Tools → Merge for duplicate tools. Mark good decisions as few-shot examples.
 4. **Build while the backfill runs:**
-   - **Queue page improvements** from `UI-HANDOFF.md` "Queue item": a "Resolves to" box (existing tool or New tool), tag chips with out-of-vocabulary tags struck through, and the model's reason as a plain quote. Agreed as the next build.
-   - **The public site**, following the handoff's suggested build order: tokens, layout and category labels first, then the trending list, tool pages, search and filters. Merge redirects (301 from a merged tool's slug) are part of the tool page.
+   - ~~Queue page improvements~~: done (Resolves to box, tag chips, reason quote, lime Approve).
+   - **The public site** (next build), following the handoff's suggested build order: tokens, layout and category labels first, then the trending list, tool pages, search and filters. Merge redirects (301 from a merged tool's slug) are part of the tool page.
    - **Reports page** (admin); only matters once the public site is up.
 5. **Step 7 tuning** against the backfilled data, then **step 8**: lower `review_threshold`, re-classify unreviewed posts so confident ones auto-publish, and go public.
 
