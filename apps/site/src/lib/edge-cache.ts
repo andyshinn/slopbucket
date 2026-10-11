@@ -8,7 +8,6 @@ import { SORTS, filterParams, parseFilters } from "./browse.ts";
 /** Seconds a public page stays in the edge cache. */
 export const PAGE_TTL = 300;
 
-
 /** GET requests for public HTML pages; never /admin or /api, and not /avatar, which caches itself. */
 export function isCacheablePath(method: string, pathname: string): boolean {
   if (method !== "GET") return false;
@@ -48,4 +47,3 @@ export function cacheableCopy(response: Response): Response | null {
   copy.headers.set("cache-control", `public, max-age=60, s-maxage=${PAGE_TTL}`);
   return copy;
 }
-
