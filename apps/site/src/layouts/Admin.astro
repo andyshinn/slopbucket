@@ -1,19 +1,23 @@
 ---
+import { env } from "cloudflare:workers";
 import Icon from "../components/Icon.astro";
+import { openReportCount } from "../lib/reports-admin.ts";
 import Base from "./Base.astro";
 
 interface Props {
   title: string;
-  section?: "queue" | "tools" | "status" | "settings";
+  section?: "queue" | "tools" | "reports" | "status" | "settings";
 }
 const { title, section } = Astro.props;
 const email = Astro.locals.adminEmail;
 const tabs = [
   { id: "queue", href: "/admin/queue", label: "Queue", icon: "inbox" },
   { id: "tools", href: "/admin/tools", label: "Tools", icon: "wrench" },
+  { id: "reports", href: "/admin/reports", label: "Reports", icon: "flag" },
   { id: "status", href: "/admin/status", label: "Status", icon: "chartBar" },
   { id: "settings", href: "/admin/settings", label: "Settings", icon: "cog" },
 ] as const;
+const openReports = await openReportCount(env.DB);
 ---
 
 <Base title={`${title} · Slop Bucket admin`} noindex>
@@ -25,15 +29,21 @@ const tabs = [
       </a>
       {email && <span class="truncate text-sm text-gray-500">{email}</span>}
     </div>
-    <nav class="mx-auto grid max-w-2xl grid-cols-4 px-2" aria-label="Admin sections">
+    <nav class="mx-auto grid max-w-2xl grid-cols-5 px-1" aria-label="Admin sections">
       {tabs.map((t) => (
         <a
           href={t.href}
           aria-current={section === t.id ? "page" : undefined}
-          class={`flex min-h-11 items-center justify-center gap-1.5 border-b-2 text-sm font-medium ${section === t.id ? "border-brand-600 text-brand-700" : "border-transparent text-gray-500 hover:text-gray-900"}`}
+          class={`flex min-h-11 items-center justify-center gap-1 border-b-2 text-sm font-medium sm:gap-1.5 ${section === t.id ? "border-brand-600 text-brand-700" : "border-transparent text-gray-500 hover:text-gray-900"}`}
         >
-          <Icon name={t.icon} class="size-4" />
+          <Icon name={t.icon} class="hidden size-4 sm:block" />
           {t.label}
+          {t.id === "reports" && openReports > 0 && (
+            <span class="rounded-full bg-lime-400 px-1.5 text-xs font-semibold text-lime-950 tabular-nums">
+              {openReports}
+              <span class="sr-only"> open</span>
+            </span>
+          )}
         </a>
       ))}
     </nav>
