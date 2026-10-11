@@ -1,0 +1,202 @@
+---
+import { getSetting } from "@slop-bucket/core";
+import { env } from "cloudflare:workers";
+import CategoryBadge from "../../../components/CategoryBadge.astro";
+import Icon from "../../../components/Icon.astro";
+import ToolAvatar from "../../../components/ToolAvatar.astro";
+import Public from "../../../layouts/Public.astro";
+import { categoryStyle } from "../../../lib/categories.ts";
+import { compactNumber } from "../../../lib/public.ts";
+import { engagement, lookupTool, threadUrl } from "../../../lib/tool-page.ts";
+import { SOURCE_LABELS, githubHref, hostname, safeHref } from "../../../lib/ui.ts";
+
+const found = await lookupTool(env.DB, Astro.params.slug ?? "");
+if (!found) return new Response("Not found", { status: 404 });
+if ("redirect" in found) return Astro.redirect(found.redirect, 301);
+const { tool, posts } = found;
+const tagGroups = await getSetting(env.DB, "tags");
+
+const category = categoryStyle(tool.category);
+const tagLabels = new Map(tagGroups.flatMap((g) => g.tags.map((t) => [t.slug, t.label] as const)));
+const tags = tool.tags.filter((t) => tagLabels.has(t));
+const homepage = safeHref(tool.homepage_url);
+const repo = githubHref(tool.github_repo);
+const date = (iso: string, year = false) =>
+  new Date(iso).toLocaleDateString("en", { month: "short", day: "numeric", ...(year ? { year: "numeric" } : {}), timeZone: "UTC" });
+const oldest = posts.at(-1);
+const TYPE_LABELS: Record<string, string> = { launch: "Launch", release: "Release", discussion: "Discussion", news: "News" };
+const glance: [string, string, string | null][] = [];
+if (tool.is_open_source !== false && tool.stars !== null) {
+  const gain = tool.stars_gained_7d !== null && tool.stars_gained_7d > 0 ? ` (+${compactNumber(tool.stars_gained_7d)} this week)` : "";
+  glance.push(["Stars", `${tool.stars.toLocaleString("en")}${gain}`, null]);
+}
+if (tool.is_open_source !== false && tool.license) glance.push(["License", tool.license, null]);
+if (tool.is_open_source !== false && tool.language) glance.push(["Language", tool.language, null]);
+if (repo) glance.push(["Repository", tool.github_repo!, repo]);
+if (homepage) glance.push(["Homepage", hostname(homepage), homepage]);
+glance.push(["First seen", date(tool.first_seen_at, true), null]);
+
+const button = "inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime-600";
+const card = "rounded-xl bg-white shadow-xs ring-1 ring-stone-200 dark:bg-stone-900 dark:ring-stone-800";
+const link = "font-medium text-lime-700 hover:underline dark:text-lime-400";
+---
+
+<Public title={`${tool.name} · Slop Bucket`} description={tool.description ?? `${tool.name} on Slop Bucket.`}>
+  <div class="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-10">
+    <nav aria-label="Breadcrumb" class="font-mono text-xs text-stone-500 dark:text-stone-400">
+      <ol class="flex flex-wrap items-center gap-1.5">
+        <li><a href="/" class="hover:underline">Trending</a></li>
+        <li aria-hidden="true">/</li>
+        <li><a href={`/category/${tool.category}`} class="hover:underline">{category.label}</a></li>
+        <li aria-hidden="true">/</li>
+        <li aria-current="page" class="text-stone-900 dark:text-stone-50">{tool.name}</li>
+      </ol>
+    </nav>
+
+    <header class="mt-6 flex flex-col gap-5 sm:flex-row sm:items-start">
+      <ToolAvatar name={tool.name} category={tool.category} githubRepo={tool.github_repo} class="size-20 rounded-2xl text-3xl" />
+      <div class="min-w-0 flex-1">
+        <h1 class="text-4xl font-bold tracking-tighter break-words sm:text-5xl">{tool.name}</h1>
+        <div class="mt-3 flex flex-wrap items-center gap-2">
+          <CategoryBadge category={tool.category} />
+          {
+            tool.is_open_source === true && (
+              <span class="inline-flex items-center rounded-md bg-lime-50 px-2 py-0.5 text-xs font-medium text-lime-700 ring-1 ring-lime-200 ring-inset dark:bg-lime-400/10 dark:text-lime-400 dark:ring-lime-400/30">Open source</span>
+            )
+          }
+          {
+            tool.is_open_source === false && (
+              <span class="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium text-stone-600 ring-1 ring-stone-300 ring-inset dark:text-stone-300 dark:ring-stone-700">
+                <Icon name="lockClosed" class="size-3" /> Closed source
+              </span>
+            )
+          }
+        </div>
+        {tool.description && <p class="mt-4 max-w-2xl text-lg text-stone-600 dark:text-stone-300">{tool.description}</p>}
+        {
+          tags.length > 0 && (
+            <ul class="mt-4 flex flex-wrap gap-2" aria-label="Tags">
+              {tags.map((t) => (
+                <li>
+                  <a href={`/?tag=${encodeURIComponent(t)}`} class="inline-flex min-h-8 items-center rounded-full px-3 font-mono text-xs text-stone-600 ring-1 ring-stone-300 ring-inset hover:bg-stone-100 dark:text-stone-300 dark:ring-stone-700 dark:hover:bg-stone-800">
+                    #{t}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )
+        }
+        {
+          (homepage || repo) && (
+            <div class="mt-6 flex flex-wrap gap-3">
+              {homepage && (
+                <a href={homepage} rel="noopener" class={`${button} bg-lime-400 text-lime-950 hover:bg-lime-300`}>
+                  Visit {hostname(homepage)} <Icon name="arrowTopRight" class="size-4" />
+                </a>
+              )}
+              {repo && (
+                <a href={repo} rel="noopener" class={`${button} bg-white ring-1 ring-stone-300 ring-inset hover:bg-stone-100 dark:bg-stone-900 dark:ring-stone-700 dark:hover:bg-stone-800`}>
+                  <Icon name="codeBracket" class="size-4" /> View source
+                </a>
+              )}
+            </div>
+          )
+        }
+      </div>
+    </header>
+
+    <div class="mt-10 grid gap-10 lg:grid-cols-[1fr_300px]">
+      <section aria-labelledby="timeline-heading" class="min-w-0">
+        <h2 id="timeline-heading" class="text-xl font-bold tracking-tight">Timeline</h2>
+        <ol class="mt-6 space-y-6">
+          {
+            posts.map((p) => {
+              const isRelease = p.post_type === "release";
+              const href = safeHref(p.url);
+              const thread = threadUrl(p);
+              const stats = engagement(p, compactNumber);
+              return (
+                <li class="grid grid-cols-[3.5rem_1.25rem_1fr] gap-x-3 sm:grid-cols-[4.5rem_1.25rem_1fr]">
+                  <time datetime={p.posted_at} class="pt-1 text-right font-mono text-xs text-stone-500 tabular-nums dark:text-stone-400">
+                    {date(p.posted_at)}
+                  </time>
+                  <div class="relative flex justify-center">
+                    <span class="absolute inset-y-0 -bottom-6 w-px bg-stone-200 dark:bg-stone-800" aria-hidden="true" />
+                    {isRelease ? (
+                      <span class="relative mt-0.5 flex size-5 items-center justify-center rounded-full bg-lime-400 text-lime-950" aria-hidden="true">
+                        <Icon name="tag" class="size-3" />
+                      </span>
+                    ) : (
+                      <span class="relative mt-1.5 size-2.5 rounded-full bg-stone-300 ring-4 ring-stone-50 dark:bg-stone-600 dark:ring-stone-950" aria-hidden="true" />
+                    )}
+                  </div>
+                  <article class={`${card} min-w-0 p-4`}>
+                    <p class={`font-mono text-xs tracking-widest uppercase ${isRelease ? "text-lime-700 dark:text-lime-400" : "text-stone-500 dark:text-stone-400"}`}>
+                      {TYPE_LABELS[p.post_type ?? ""] ?? "Post"}
+                      {isRelease && p.version && <span class="normal-case"> · {p.version}</span>}
+                    </p>
+                    <h3 class="mt-1 font-semibold break-words">
+                      {href ? (
+                        <a href={href} rel="noopener nofollow" class="hover:underline">
+                          {p.title}
+                        </a>
+                      ) : (
+                        p.title
+                      )}
+                    </h3>
+                    <p class="mt-1 text-sm text-stone-500 dark:text-stone-400">{hostname(p.url)}</p>
+                    <p class="mt-2 font-mono text-xs text-stone-600 dark:text-stone-300">
+                      {SOURCE_LABELS[p.source] ?? p.source}
+                      {stats && ` · ${stats}`}
+                      {p.author && <span class="text-stone-500 dark:text-stone-400"> · posted by {p.author}</span>}
+                    </p>
+                    {thread && (
+                      <p class="mt-2 text-sm">
+                        <a href={thread.href} rel="noopener" class={link}>
+                          {thread.label}
+                        </a>
+                      </p>
+                    )}
+                  </article>
+                </li>
+              );
+            })
+          }
+        </ol>
+        <p class="mt-6 font-mono text-xs text-stone-500 dark:text-stone-400">
+          {oldest ? `First spotted ${date(oldest.posted_at, true)} on ${SOURCE_LABELS[oldest.source] ?? oldest.source}` : `First spotted ${date(tool.first_seen_at, true)}`}
+        </p>
+      </section>
+
+      <aside class="space-y-6">
+        <section class={`${card} p-5`} aria-labelledby="glance-heading">
+          <h2 id="glance-heading" class="font-mono text-xs tracking-widest text-stone-500 uppercase dark:text-stone-400">At a glance</h2>
+          <dl class="mt-3 divide-y divide-stone-200 text-sm dark:divide-stone-800">
+            {
+              glance.map(([label, value, href]) => (
+                <div class="flex justify-between gap-4 py-2.5">
+                  <dt class="text-stone-500 dark:text-stone-400">{label}</dt>
+                  <dd class="min-w-0 truncate text-right font-medium">
+                    {href ? (
+                      <a href={href} rel="noopener" class={link}>
+                        {value}
+                      </a>
+                    ) : (
+                      value
+                    )}
+                  </dd>
+                </div>
+              ))
+            }
+          </dl>
+        </section>
+        <p class="text-sm text-stone-600 dark:text-stone-300">
+          Something wrong with this listing?{" "}
+          <a href={`/tools/${tool.slug}/report`} class={`${link} inline-flex items-center gap-1`}>
+            <Icon name="flag" class="size-4" /> Report it
+          </a>
+        </p>
+      </aside>
+    </div>
+  </div>
+</Public>

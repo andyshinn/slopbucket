@@ -175,3 +175,19 @@ describe("edge cache", () => {
     expect(cacheableCopy(new Response("{}", { headers: { "content-type": "application/json" } }))).toBeNull();
   });
 });
+
+describe("rate limits", () => {
+  it("allows without a limiter, and keys the limiter by IP", async () => {
+    const { withinLimit, tooManyRequests } = await import("../src/lib/edge-cache.ts");
+    const req = new Request("https://slopbucket.app/", { headers: { "cf-connecting-ip": "203.0.113.9" } });
+    expect(await withinLimit(undefined, req)).toBe(true);
+    const keys: string[] = [];
+    const limiter = { limit: async ({ key }: { key: string }) => (keys.push(key), { success: keys.length < 2 }) } as RateLimit;
+    expect(await withinLimit(limiter, req)).toBe(true);
+    expect(await withinLimit(limiter, req)).toBe(false);
+    expect(keys).toEqual(["page:203.0.113.9", "page:203.0.113.9"]);
+    const res = tooManyRequests();
+    expect(res.status).toBe(429);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+  });
+});

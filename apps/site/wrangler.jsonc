@@ -27,6 +27,14 @@
     ]
   },
 
+  // Per-IP rate limits (the namespace IDs are arbitrary, unique per account).
+  // PAGE_LIMITER counts public page renders that miss the edge cache, so no one
+  // can run D1 queries in a loop; REPORT_LIMITER counts report submissions.
+  "ratelimits": [
+    { "name": "PAGE_LIMITER", "namespace_id": "1001", "simple": { "limit": 60, "period": 60 } },
+    { "name": "REPORT_LIMITER", "namespace_id": "1002", "simple": { "limit": 5, "period": 60 } }
+  ],
+
   // Extracted article text (written by sb-ingest), shown in the admin review queue.
   "r2_buckets": [{ "binding": "ARTICLES", "bucket_name": "sb-articles" }],
 

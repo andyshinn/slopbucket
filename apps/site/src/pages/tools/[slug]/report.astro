@@ -1,0 +1,108 @@
+---
+import { env } from "cloudflare:workers";
+import Public from "../../../layouts/Public.astro";
+import { clientIp } from "../../../lib/edge-cache.ts";
+import { NOTE_MAX, REPORT_REASONS, ReportError, submitReport } from "../../../lib/reports.ts";
+import { lookupTool } from "../../../lib/tool-page.ts";
+
+// The report form for a tool page: a full page rather than a dialog, so it works
+// without JavaScript and the Turnstile widget renders normally.
+const slug = Astro.params.slug ?? "";
+const found = await lookupTool(env.DB, slug);
+if (!found) return new Response("Not found", { status: 404 });
+if ("redirect" in found) return Astro.redirect(`${found.redirect}/report`, 301);
+const { tool } = found;
+
+const secrets = env as unknown as { TURNSTILE_SITE_KEY?: string; TURNSTILE_SECRET_KEY?: string };
+const enabled = Boolean(secrets.TURNSTILE_SITE_KEY && secrets.TURNSTILE_SECRET_KEY);
+
+let sent = false;
+let error: string | null = null;
+let form: FormData | null = null;
+if (Astro.request.method === "POST") {
+  form = await Astro.request.formData();
+  try {
+    await submitReport(env.DB, tool.id, form, clientIp(Astro.request), {
+      turnstileSecret: secrets.TURNSTILE_SECRET_KEY,
+      limiter: env.REPORT_LIMITER,
+    });
+    sent = true;
+  } catch (err) {
+    if (!(err instanceof ReportError)) throw err;
+    error = err.message;
+    Astro.response.status = err.status;
+  }
+}
+const chosen = String(form?.get("reason") ?? "");
+const note = String(form?.get("note") ?? "");
+const back = `/tools/${tool.slug}`;
+const button = "inline-flex min-h-11 flex-1 items-center justify-center rounded-lg px-4 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime-600";
+---
+
+<Public title={`Report ${tool.name} · Slop Bucket`} description={`Report a problem with the ${tool.name} listing.`}>
+  {enabled && !sent && <script is:inline slot="head" src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>}
+  <meta name="robots" content="noindex" slot="head" />
+  <div class="mx-auto flex max-w-lg flex-col px-4 py-8 sm:py-16">
+    <div class="rounded-2xl bg-white p-6 shadow-lg ring-1 ring-stone-200 dark:bg-stone-900 dark:ring-stone-800">
+      {
+        sent ? (
+          <div role="status">
+            <h1 class="text-2xl font-bold tracking-tight">Report sent</h1>
+            <p class="mt-2 text-stone-600 dark:text-stone-300">Thanks. It's in the admin queue, and the listing stays up until someone looks at it.</p>
+            <a href={back} class={`${button} mt-6 w-full bg-lime-400 text-lime-950 hover:bg-lime-300`}>
+              Back to {tool.name}
+            </a>
+          </div>
+        ) : (
+          <form method="post">
+            <h1 class="text-2xl font-bold tracking-tight">Report {tool.name}</h1>
+            <p class="mt-1 text-stone-600 dark:text-stone-300">Tell us what's wrong with this listing. A person reads every report.</p>
+            {!enabled && (
+              <p class="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 ring-1 ring-amber-200 ring-inset" role="status">
+                Reports aren't switched on yet.
+              </p>
+            )}
+            {error && (
+              <p class="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800 ring-1 ring-red-200 ring-inset" role="alert">
+                {error}
+              </p>
+            )}
+            <fieldset class="mt-6">
+              <legend class="font-mono text-xs tracking-widest text-stone-500 uppercase dark:text-stone-400">Reason</legend>
+              <div class="mt-2 space-y-2">
+                {Object.entries(REPORT_REASONS).map(([value, r]) => (
+                  <label class="flex cursor-pointer gap-3 rounded-xl p-3 ring-1 ring-stone-300 ring-inset has-checked:bg-lime-50 has-checked:ring-2 has-checked:ring-lime-600 dark:ring-stone-700 dark:has-checked:bg-lime-400/10 dark:has-checked:ring-lime-400">
+                    <input type="radio" name="reason" value={value} required checked={chosen === value} class="mt-0.5 size-5 shrink-0 accent-lime-600" />
+                    <span>
+                      <span class="block font-medium">{r.label}</span>
+                      <span class="block text-sm text-stone-600 dark:text-stone-300">{r.hint}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <label for="note" class="mt-6 block text-sm font-medium">
+              Note <span class="font-normal text-stone-500 dark:text-stone-400">(optional)</span>
+            </label>
+            <textarea
+              id="note"
+              name="note"
+              rows="3"
+              maxlength={NOTE_MAX}
+              class="mt-1 block w-full rounded-lg bg-white px-3 py-2 text-base outline-1 -outline-offset-1 outline-stone-300 focus:outline-2 focus:-outline-offset-2 focus:outline-lime-600 dark:bg-stone-900 dark:outline-stone-700"
+            >{note}</textarea>
+            {enabled && <div class="cf-turnstile mt-4" data-sitekey={secrets.TURNSTILE_SITE_KEY} data-theme="auto" />}
+            <div class="mt-6 flex gap-3">
+              <a href={back} class={`${button} ring-1 ring-stone-300 ring-inset hover:bg-stone-100 dark:ring-stone-700 dark:hover:bg-stone-800`}>
+                Cancel
+              </a>
+              <button type="submit" disabled={!enabled} class={`${button} bg-lime-400 text-lime-950 hover:bg-lime-300 disabled:opacity-50`}>
+                Send report
+              </button>
+            </div>
+          </form>
+        )
+      }
+    </div>
+  </div>
+</Public>
