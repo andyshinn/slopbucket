@@ -1,10 +1,13 @@
 ---
 import { env } from "cloudflare:workers";
-import { getSetting } from "@slop-bucket/core";
+import { categoryDisplay, getSetting } from "@slop-bucket/core";
 import Icon from "../../../../components/Icon.astro";
 import Notice from "../../../../components/Notice.astro";
+import ToolAvatar from "../../../../components/ToolAvatar.astro";
 import Admin from "../../../../layouts/Admin.astro";
 import {
+  POSTS_ALL,
+  POSTS_DEFAULT,
   ToolError,
   addAlias,
   getTool,
@@ -49,8 +52,9 @@ if (Astro.request.method === "POST") {
   }
 }
 
+const showAllPosts = Astro.url.searchParams.get("posts") === "all";
 const [tool, categories, tagGroups, merges, mergedAway] = await Promise.all([
-  getTool(env.DB, id),
+  getTool(env.DB, id, showAllPosts ? POSTS_ALL : POSTS_DEFAULT),
   getSetting(env.DB, "categories"),
   getSetting(env.DB, "tags"),
   mergeHistory(env.DB, id),
@@ -73,13 +77,20 @@ const doneMessage: Record<string, string> = {
   unhide: "Visible again.",
 };
 const homepage = safeHref(tool.homepage_url);
+const description = field("description", tool.description);
+const statusChip: Record<string, string> = {
+  published: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
+  queued: "bg-amber-50 text-amber-800 ring-amber-600/20",
+  hidden: "bg-stone-100 text-stone-600 ring-stone-500/20",
+};
 ---
 
 <Admin title={`Edit ${tool.name}`} section="tools">
   <a href="/admin/tools" class="text-sm font-medium text-brand-700">← All tools</a>
-  <div class="mt-2 flex items-start justify-between gap-3">
-    <h1 class="text-lg font-semibold break-words">{tool.name}</h1>
-    <span class="shrink-0 rounded-md bg-stone-100 px-2 py-0.5 text-xs font-medium text-stone-700">{tool.status}</span>
+  <div class="mt-2 flex items-center gap-3">
+    <ToolAvatar name={tool.name} category={tool.category ?? "other"} githubRepo={tool.github_repo} class="size-11 rounded-[10px] text-lg" />
+    <h1 class="min-w-0 flex-1 text-lg font-semibold break-words">{tool.name}</h1>
+    <span class={`shrink-0 rounded-md px-2 py-0.5 text-xs font-medium capitalize ring-1 ring-inset ${statusChip[tool.status]}`}>{tool.status}</span>
   </div>
   <p class="mt-1 text-sm text-stone-600">
     First seen {timeAgo(tool.first_seen_at)} · {tool.postCount} {tool.postCount === 1 ? "post" : "posts"}
@@ -109,13 +120,18 @@ const homepage = safeHref(tool.homepage_url);
       <input id="slug" name="slug" value={field("slug", tool.slug)} required class={`${input} mt-1 font-mono text-sm`} autocomplete="off" autocapitalize="off" />
     </div>
     <div>
-      <label for="description" class={label}>Description <span class="font-normal text-stone-500">(under 140 characters; describe the tool, not a post)</span></label>
-      <textarea id="description" name="description" rows="3" maxlength="140" class={`${input} mt-1`}>{field("description", tool.description)}</textarea>
+      <div class="flex items-baseline justify-between gap-3">
+        <label for="description" class={label}>Description</label>
+        {/* The admin ships no JS, so this counts the saved text; maxlength stops typing at 140. */}
+        <span class="font-mono text-xs text-stone-500 tabular-nums">{[...description].length} / 140</span>
+      </div>
+      <input id="description" name="description" value={description} maxlength="140" aria-describedby="description-hint" class={`${input} mt-1`} autocomplete="off" />
+      <p id="description-hint" class="mt-1 text-xs text-stone-500">Describe the tool, not a post. One line, up to 140 characters.</p>
     </div>
     <div>
       <label for="category" class={label}>Category</label>
       <select id="category" name="category" class={`${input} mt-1`}>
-        {categories.map((c) => <option value={c} selected={c === field("category", tool.category)}>{c}</option>)}
+        {categories.map((c) => <option value={c} selected={c === field("category", tool.category)}>{categoryDisplay(c).label}</option>)}
       </select>
     </div>
     <fieldset>
@@ -125,7 +141,7 @@ const homepage = safeHref(tool.homepage_url);
           <p class="text-xs font-medium text-stone-500">{g.label}</p>
           <div class="mt-1 flex flex-wrap gap-2">
             {g.tags.map((t) => (
-              <label class="inline-flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm ring-1 ring-stone-300 ring-inset has-checked:bg-brand-50 has-checked:ring-brand-600">
+              <label class="inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm ring-1 ring-stone-300 ring-inset has-checked:bg-brand-50 has-checked:ring-brand-600">
                 <input type="checkbox" name="tags" value={t.slug} checked={selectedTags.has(t.slug)} class="size-4 accent-brand-600" />
                 {t.label}
               </label>
@@ -144,10 +160,10 @@ const homepage = safeHref(tool.homepage_url);
     </div>
     <fieldset>
       <legend class={label}>Source</legend>
-      <div class="mt-1 grid grid-cols-3 gap-2">
-        {[["true", "Open"], ["false", "Closed"], ["", "Unknown"]].map(([value, text]) => (
-          <label class="flex min-h-11 items-center justify-center gap-2 rounded-lg text-sm ring-1 ring-stone-300 ring-inset has-checked:bg-brand-50 has-checked:ring-brand-600">
-            <input type="radio" name="is_open_source" value={value} checked={openValue === value} class="size-4 accent-brand-600" />
+      <div class="mt-1 grid grid-cols-3 gap-1 rounded-lg bg-stone-100 p-1">
+        {[["true", "Open source"], ["false", "Closed"], ["", "Unknown"]].map(([value, text]) => (
+          <label class="flex min-h-11 cursor-pointer items-center justify-center rounded-md px-2 text-center text-sm font-medium text-stone-600 has-checked:bg-white has-checked:text-stone-900 has-checked:shadow-xs has-checked:ring-1 has-checked:ring-stone-200 has-focus-visible:outline-2 has-focus-visible:outline-lime-600">
+            <input type="radio" name="is_open_source" value={value} checked={openValue === value} class="sr-only" />
             {text}
           </label>
         ))}
@@ -166,8 +182,9 @@ const homepage = safeHref(tool.homepage_url);
       {tool.aliases.map((a) => (
         <li class="flex items-center justify-between gap-3 py-1 pr-1 pl-4">
           <span class="min-w-0">
-            <span class="mr-2 rounded bg-stone-100 px-1.5 py-0.5 text-xs font-medium text-stone-600">{a.kind}</span>
+            <span class="mr-2 rounded bg-stone-100 px-1.5 py-0.5 font-mono text-xs font-medium text-stone-600">{a.kind}</span>
             <span class="font-mono text-sm break-all">{a.value}</span>
+            {a.via_merge && <span class="ml-2 text-xs whitespace-nowrap text-stone-500">via merge</span>}
           </span>
           <form method="post">
             <input type="hidden" name="action" value="remove_alias" />
@@ -180,7 +197,8 @@ const homepage = safeHref(tool.homepage_url);
         </li>
       ))}
     </ul>
-    <form method="post" class="mt-2 grid grid-cols-[auto_1fr_auto] gap-2">
+    <h3 class="mt-3 text-sm font-medium text-stone-900">+ Add alias</h3>
+    <form method="post" class="mt-1 grid grid-cols-[auto_1fr_auto] gap-2">
       <input type="hidden" name="action" value="add_alias" />
       <select name="kind" aria-label="Alias kind" class={input}>
         <option value="repo">repo</option>
@@ -188,29 +206,8 @@ const homepage = safeHref(tool.homepage_url);
         <option value="name">name</option>
       </select>
       <input name="value" placeholder="owner/repo, example.dev or a name" aria-label="Alias value" required class={input} autocomplete="off" autocapitalize="off" />
-      <button type="submit" class={btnSecondary}>Add</button>
+      <button type="submit" class={btnSecondary}>Add alias</button>
     </form>
-  </section>
-
-  <section class="mt-6">
-    <h2 class="text-lg font-semibold">Posts</h2>
-    <ul class={`${card} mt-2 divide-y divide-stone-100`}>
-      {tool.posts.length === 0 && <li class="p-4 text-sm text-stone-600">No posts.</li>}
-      {tool.posts.map((p) => (
-        <li class="flex items-center justify-between gap-3 px-4 py-3">
-          <span class="min-w-0">
-            <a href={safeHref(p.url) ?? "#"} class="block font-medium break-words text-stone-900 hover:text-brand-700" target="_blank" rel="noopener noreferrer">{p.title}</a>
-            <span class="block text-sm text-stone-500">
-              {SOURCE_LABELS[p.source] ?? p.source} · {timeAgo(p.posted_at)}{p.post_type && ` · ${p.post_type}`} · {p.status}
-            </span>
-          </span>
-          {p.status === "queued" && (
-            <a href={`/admin/queue/${p.id}/reassign`} class={`${btnSecondary} shrink-0`}>Move</a>
-          )}
-        </li>
-      ))}
-    </ul>
-    {tool.postCount > tool.posts.length && <p class="mt-2 text-sm text-stone-500">Showing the latest {tool.posts.length} of {tool.postCount}.</p>}
   </section>
 
   {merges.length > 0 && (
@@ -236,28 +233,54 @@ const homepage = safeHref(tool.homepage_url);
     </section>
   )}
 
-  {!mergedAway && (
-    <section class="mt-6">
-      <h2 class="text-lg font-semibold">Merge</h2>
-      <p class="mt-1 text-sm text-stone-600">Same tool listed twice? Move this one's posts and aliases into the other.</p>
-      <a href={`/admin/tools/${id}/merge`} class={`${btnSecondary} mt-2 w-full`}>
-        <Icon name="arrowsRightLeft" class="size-4 text-stone-500" /> Merge into another tool…
-      </a>
-    </section>
-  )}
+  <section id="posts" class="mt-6 scroll-mt-28">
+    <h2 class="text-lg font-semibold">Posts</h2>
+    <ul class={`${card} mt-2 divide-y divide-stone-100`}>
+      {tool.posts.length === 0 && <li class="p-4 text-sm text-stone-600">No posts.</li>}
+      {tool.posts.map((p) => (
+        <li class="flex items-center justify-between gap-3 px-4 py-3">
+          <span class="min-w-0">
+            <a href={safeHref(p.url) ?? "#"} class="block font-medium break-words text-stone-900 hover:text-brand-700" target="_blank" rel="noopener noreferrer">{p.title}</a>
+            <span class="block text-sm text-stone-500">
+              {SOURCE_LABELS[p.source] ?? p.source} · {timeAgo(p.posted_at)}{p.post_type && ` · ${p.post_type}`} · {p.status}
+            </span>
+          </span>
+          {p.status === "queued" && (
+            <a href={`/admin/queue/${p.id}/reassign`} class={`${btnSecondary} shrink-0`}>Move</a>
+          )}
+        </li>
+      ))}
+    </ul>
+    {tool.postCount > tool.posts.length && (
+      <p class="mt-2 flex items-center justify-between gap-3 text-sm text-stone-500">
+        Showing the latest {tool.posts.length} of {tool.postCount.toLocaleString("en")}.
+        {!showAllPosts && <a href={`/admin/tools/${id}?posts=all#posts`} class="inline-flex min-h-11 items-center font-medium text-lime-700 hover:underline">Show all</a>}
+      </p>
+    )}
+  </section>
 
   {!mergedAway && (
     <section class="mt-6">
-      <h2 class="text-lg font-semibold">{tool.status === "hidden" ? "Hidden" : "Hide this tool"}</h2>
-      <p class="mt-1 text-sm text-stone-600">
-        Hidden tools disappear from public pages. Their posts stay linked, so new posts about them stay hidden too.
-      </p>
-      <form method="post" class="mt-2">
-        <input type="hidden" name="action" value={tool.status === "hidden" ? "unhide" : "hide"} />
-        <button type="submit" class={`${tool.status === "hidden" ? btnSecondary : btnReject} w-full`}>
-          {tool.status === "hidden" ? "Show this tool again" : "Hide this tool"}
-        </button>
-      </form>
+      <h2 class="text-lg font-semibold">Other actions</h2>
+      <div class={`${card} mt-2 space-y-4 p-4`}>
+        <div>
+          <p class="text-sm text-stone-600">Same tool listed twice? Move this one's posts and aliases into the other.</p>
+          <a href={`/admin/tools/${id}/merge`} class={`${btnSecondary} mt-2 w-full`}>
+            <Icon name="arrowsRightLeft" class="size-4 text-stone-500" /> Merge into another tool
+          </a>
+        </div>
+        <div class="border-t border-stone-100 pt-4">
+          <p class="text-sm text-stone-600">
+            Hidden tools disappear from public pages. Their posts stay linked, so new posts about them stay hidden too.
+          </p>
+          <form method="post" class="mt-2">
+            <input type="hidden" name="action" value={tool.status === "hidden" ? "unhide" : "hide"} />
+            <button type="submit" class={`${tool.status === "hidden" ? btnSecondary : btnReject} w-full`}>
+              {tool.status === "hidden" ? "Show this tool again" : "Hide this tool"}
+            </button>
+          </form>
+        </div>
+      </div>
     </section>
   )}
 </Admin>

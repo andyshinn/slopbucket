@@ -105,15 +105,30 @@ export interface ToolDetail {
   status: ToolStatus;
   first_seen_at: string;
   last_post_at: string | null;
-  aliases: { kind: "repo" | "domain" | "name"; value: string }[];
+  /** via_merge: moved here by a merge that hasn't been split back out. */
+  aliases: { kind: "repo" | "domain" | "name"; value: string; via_merge: boolean }[];
   posts: { id: number; title: string; source: string; url: string; posted_at: string; post_type: string | null; status: string }[];
   postCount: number;
 }
 
-export async function getTool(db: D1Database, id: number, postLimit = 20): Promise<ToolDetail | null> {
+/** Posts on the edit page by default; "Show all" raises it to POSTS_ALL. */
+export const POSTS_DEFAULT = 20;
+export const POSTS_ALL = 500;
+
+export async function getTool(db: D1Database, id: number, postLimit = POSTS_DEFAULT): Promise<ToolDetail | null> {
   const [tool, aliases, posts, count] = await db.batch([
     db.prepare("SELECT id, slug, name, description, category, tags, homepage_url, github_repo, is_open_source, status, first_seen_at, last_post_at FROM tools WHERE id = ?").bind(id),
-    db.prepare("SELECT kind, value FROM tool_aliases WHERE tool_id = ? ORDER BY CASE kind WHEN 'repo' THEN 0 WHEN 'domain' THEN 1 ELSE 2 END, value").bind(id),
+    db
+      .prepare(
+        `SELECT a.kind, a.value, EXISTS (
+           SELECT 1 FROM tool_merges m, json_each(m.moved_aliases) j
+           WHERE m.into_tool_id = a.tool_id AND m.undone_at IS NULL
+             AND j.value ->> '$.kind' = a.kind AND j.value ->> '$.value' = a.value
+         ) AS via_merge
+         FROM tool_aliases a WHERE a.tool_id = ?
+         ORDER BY CASE a.kind WHEN 'repo' THEN 0 WHEN 'domain' THEN 1 ELSE 2 END, a.value`,
+      )
+      .bind(id),
     db
       .prepare("SELECT id, title, source, url, posted_at, post_type, status FROM posts WHERE tool_id = ? ORDER BY posted_at DESC, id DESC LIMIT ?")
       .bind(id, postLimit),
@@ -124,7 +139,7 @@ export async function getTool(db: D1Database, id: number, postLimit = 20): Promi
   return {
     ...row,
     tags: JSON.parse(row.tags) as string[],
-    aliases: aliases!.results as ToolDetail["aliases"],
+    aliases: (aliases!.results as (Omit<ToolDetail["aliases"][number], "via_merge"> & { via_merge: number })[]).map((a) => ({ ...a, via_merge: a.via_merge === 1 })),
     posts: posts!.results as ToolDetail["posts"],
     postCount: (count!.results[0] as { n: number }).n,
   };

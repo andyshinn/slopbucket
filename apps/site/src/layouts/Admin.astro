@@ -6,8 +6,11 @@ import Base from "./Base.astro";
 interface Props {
   title: string;
   section?: "queue" | "tools" | "reports" | "status" | "settings";
+  /** Widen to 5xl from `lg` up, for table pages. */
+  wide?: boolean;
 }
-const { title, section } = Astro.props;
+const { title, section, wide = false } = Astro.props;
+const width = wide ? "max-w-2xl lg:max-w-5xl" : "max-w-2xl";
 const email = Astro.locals.adminEmail;
 const counts = await navCounts(env.DB);
 interface Tab {
@@ -29,7 +32,7 @@ const tabs: Tab[] = [
 
 <Base title={`${title} · Slop Bucket admin`} noindex htmlClass="bg-stone-50" bodyClass="font-sans text-stone-900">
   <header class="sticky top-0 z-10 border-b border-stone-200 bg-white">
-    <div class="mx-auto flex h-13 max-w-2xl items-center gap-2 px-4">
+    <div class={`mx-auto flex h-13 ${width} items-center gap-2 px-4`}>
       <a href="/admin/queue" class="shrink-0 rounded-md focus-visible:outline-2 focus-visible:outline-lime-600">
         <img src="/logo.svg" alt="Slop Bucket" width="127" height="28" class="h-7 w-auto" />
       </a>
@@ -37,7 +40,7 @@ const tabs: Tab[] = [
       {email && <span class="ml-2 hidden truncate text-sm text-stone-500 sm:block">{email}</span>}
       <a href="/" class="ml-auto inline-flex min-h-11 shrink-0 items-center text-sm font-medium text-lime-700 hover:underline">View site</a>
     </div>
-    <nav class="mx-auto flex max-w-2xl overflow-x-auto px-2" aria-label="Admin sections">
+    <nav class={`mx-auto flex ${width} overflow-x-auto px-2`} aria-label="Admin sections">
       {
         tabs.map((t) => {
           const active = section === t.id;
@@ -60,7 +63,7 @@ const tabs: Tab[] = [
       }
     </nav>
   </header>
-  <main class="mx-auto max-w-2xl px-4 pt-4 pb-40">
+  <main class={`mx-auto ${width} px-4 pt-4 pb-40`}>
     <slot />
   </main>
 </Base>

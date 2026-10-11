@@ -1,10 +1,12 @@
 ---
 import { env } from "cloudflare:workers";
-import { getSetting } from "@slop-bucket/core";
+import { categoryDisplay, getSetting } from "@slop-bucket/core";
+import CategoryBadge from "../../../components/CategoryBadge.astro";
 import Icon from "../../../components/Icon.astro";
+import ToolAvatar from "../../../components/ToolAvatar.astro";
 import Admin from "../../../layouts/Admin.astro";
-import { PAGE_SIZE, TOOL_SORTS, listTools, toolStatusCounts } from "../../../lib/tools-admin.ts";
-import { btnPrimary, btnSecondary, card, input, label, timeAgo } from "../../../lib/ui.ts";
+import { PAGE_SIZE, TOOL_SORTS, type ToolRow, listTools, toolStatusCounts } from "../../../lib/tools-admin.ts";
+import { accentFill, btnPrimary, btnSecondary, card, input, label, timeAgo } from "../../../lib/ui.ts";
 
 const params = Astro.url.searchParams;
 const q = (params.get("q") ?? "").trim();
@@ -42,13 +44,16 @@ const statusChip: Record<string, string> = {
   queued: "bg-amber-50 text-amber-800 ring-amber-600/20",
   hidden: "bg-stone-100 text-stone-600 ring-stone-500/20",
 };
+const statusText = (t: ToolRow) => (t.merged_into ? "Merged" : t.status.charAt(0).toUpperCase() + t.status.slice(1));
+const categoryLabel = (slug: string | null) => (slug ? categoryDisplay(slug).label : "No category");
+const SOURCE_TEXT: Record<string, string> = { "1": "Open", "0": "Closed", null: "Unknown" };
 const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 ---
 
-<Admin title="Tools" section="tools">
+<Admin title="Tools" section="tools" wide>
   <h1 class="text-lg font-semibold">Tools</h1>
 
-  <form method="get" class="mt-3 flex gap-2" role="search">
+  <form method="get" class="mt-3 flex gap-2 lg:max-w-2xl" role="search">
     {status && <input type="hidden" name="status" value={status} />}
     {category && <input type="hidden" name="category" value={category} />}
     {sort !== "trending" && <input type="hidden" name="sort" value={sort} />}
@@ -64,19 +69,19 @@ const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
         class={`flex min-h-11 shrink-0 items-center gap-1.5 border-b-2 px-3 text-sm font-medium ${status === value ? "border-stone-900 text-stone-900" : "border-transparent text-stone-500 hover:text-stone-900"}`}
       >
         {text}
-        <span class={`rounded-full px-1.5 text-xs tabular-nums ${status === value ? "bg-brand-100 text-brand-700" : "bg-stone-100 text-stone-600"}`}>{n.toLocaleString()}</span>
+        <span class={`rounded-full px-1.5 text-xs tabular-nums ${status === value ? accentFill : "bg-stone-100 text-stone-600"}`}>{n.toLocaleString("en")}</span>
       </a>
     ))}
   </nav>
 
-  <form method="get" class="mt-3 grid grid-cols-[1fr_1fr_auto] items-end gap-2">
+  <form method="get" class="mt-3 grid grid-cols-[1fr_1fr_auto] items-end gap-2 lg:max-w-2xl">
     {q && <input type="hidden" name="q" value={q} />}
     {status && <input type="hidden" name="status" value={status} />}
     <div>
       <label for="category" class={label}>Category</label>
       <select id="category" name="category" class={`${input} mt-1`}>
         <option value="">All</option>
-        {categories.map((c) => <option value={c} selected={c === category}>{c}</option>)}
+        {categories.map((c) => <option value={c} selected={c === category}>{categoryDisplay(c).label}</option>)}
       </select>
     </div>
     <div>
@@ -91,29 +96,81 @@ const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   <p class="mt-4 text-sm text-stone-600">
     {total.toLocaleString()} {total === 1 ? "tool" : "tools"}{q && <> matching “{q}”</>}
   </p>
-  <ul class={`${card} mt-2 divide-y divide-stone-100`}>
-    {tools.length === 0 && <li class="p-4 text-sm text-stone-600">No tools match.</li>}
-    {tools.map((t) => (
-      <li>
-        <a href={`/admin/tools/${t.id}`} class="flex min-h-16 items-center justify-between gap-3 px-4 py-3 hover:bg-stone-50">
-          <span class="min-w-0">
-            <span class="flex items-center gap-2">
-              <span class="truncate font-medium text-stone-900">{t.name}</span>
-              <span class={`shrink-0 rounded-md px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset ${statusChip[t.status]}`}>{t.merged_into ? "merged" : t.status}</span>
+  {tools.length === 0 && <p class={`${card} mt-2 p-4 text-sm text-stone-600`}>No tools match.</p>}
+
+  {/* Phones and tablets: a stacked list. */}
+  {tools.length > 0 && (
+    <ul class={`${card} mt-2 divide-y divide-stone-100 lg:hidden`}>
+      {tools.map((t) => (
+        <li>
+          <a href={`/admin/tools/${t.id}`} class="flex min-h-16 items-center gap-3 px-4 py-3 hover:bg-stone-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-lime-600">
+            <ToolAvatar name={t.name} category={t.category ?? "other"} githubRepo={t.github_repo} class="size-10 rounded-lg text-base" />
+            <span class="min-w-0 flex-1">
+              <span class="flex items-center gap-2">
+                <span class="truncate font-medium text-stone-900">{t.name}</span>
+                <span class={`shrink-0 rounded-md px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset ${statusChip[t.status]}`}>{statusText(t)}</span>
+              </span>
+              {t.github_repo && <span class="block truncate font-mono text-xs text-stone-500">{t.github_repo}</span>}
+              <span class="block text-sm text-stone-500">
+                {categoryLabel(t.category)} · {t.posts} {t.posts === 1 ? "post" : "posts"}
+                {t.last_post_at && ` · ${timeAgo(t.last_post_at)}`}
+                {t.is_open_source === 0 && " · closed source"}
+                {t.merged_into && ` · into ${t.merged_into}`}
+              </span>
             </span>
-            {t.github_repo && <span class="block truncate font-mono text-xs text-stone-500">{t.github_repo}</span>}
-            <span class="block text-sm text-stone-500">
-              {t.category ?? "uncategorized"} · {t.posts} {t.posts === 1 ? "post" : "posts"}
-              {t.last_post_at && ` · ${timeAgo(t.last_post_at)}`}
-              {t.is_open_source === 0 && " · closed source"}
-              {t.merged_into && ` · into ${t.merged_into}`}
-            </span>
-          </span>
-          <Icon name="pencil" class="size-5 shrink-0 text-stone-400" />
-        </a>
-      </li>
-    ))}
-  </ul>
+            <Icon name="pencil" class="size-5 shrink-0 text-stone-400" />
+          </a>
+        </li>
+      ))}
+    </ul>
+  )}
+
+  {/* Desktop: a table. */}
+  {tools.length > 0 && (
+    <div class={`${card} mt-2 hidden overflow-hidden lg:block`}>
+      <table class="w-full text-left text-sm">
+        <thead class="border-b whitespace-nowrap border-stone-200 bg-stone-50 font-mono text-xs tracking-wide text-stone-500 uppercase">
+          <tr>
+            <th scope="col" class="px-4 py-2.5 font-medium">Tool</th>
+            <th scope="col" class="px-3 py-2.5 font-medium">Category</th>
+            <th scope="col" class="px-3 py-2.5 font-medium">Status</th>
+            <th scope="col" class="px-3 py-2.5 text-right font-medium">Posts</th>
+            <th scope="col" class="px-3 py-2.5 font-medium">Last post</th>
+            <th scope="col" class="px-3 py-2.5 font-medium">Source</th>
+            <th scope="col" class="px-4 py-2.5"><span class="sr-only">Edit</span></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-stone-100">
+          {tools.map((t) => (
+            <tr class="hover:bg-stone-50">
+              <td class="w-full max-w-0 px-4 py-2.5">
+                <span class="flex items-center gap-3">
+                  <ToolAvatar name={t.name} category={t.category ?? "other"} githubRepo={t.github_repo} class="size-9 rounded-lg text-sm" />
+                  <span class="min-w-0">
+                    <a href={`/admin/tools/${t.id}`} class="block truncate font-medium text-stone-900 hover:underline">{t.name}</a>
+                    {t.github_repo && <span class="block truncate font-mono text-xs text-stone-500">{t.github_repo}</span>}
+                    {t.merged_into && <span class="block truncate text-xs text-stone-500">Merged into {t.merged_into}</span>}
+                  </span>
+                </span>
+              </td>
+              <td class="px-3 py-2.5 whitespace-nowrap">{t.category ? <CategoryBadge category={t.category} /> : <span class="text-stone-500">None</span>}</td>
+              <td class="px-3 py-2.5 whitespace-nowrap">
+                <span class={`rounded-md px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset ${statusChip[t.status]}`}>{statusText(t)}</span>
+              </td>
+              <td class="px-3 py-2.5 text-right font-mono tabular-nums">{t.posts.toLocaleString("en")}</td>
+              <td class="px-3 py-2.5 whitespace-nowrap text-stone-600">{t.last_post_at ? timeAgo(t.last_post_at) : "Never"}</td>
+              <td class="px-3 py-2.5 whitespace-nowrap text-stone-600">{SOURCE_TEXT[String(t.is_open_source)]}</td>
+              <td class="px-4 py-2.5 text-right">
+                <a href={`/admin/tools/${t.id}`} class="inline-flex min-h-9 items-center gap-1 rounded-lg px-2 font-medium text-stone-700 hover:bg-stone-100 focus-visible:outline-2 focus-visible:outline-lime-600" aria-label={`Edit ${t.name}`}>
+                  <Icon name="pencil" class="size-4 text-stone-400" /> Edit
+                </a>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )}
 
   {pages > 1 && (
     <nav class="mt-4 flex items-center justify-between" aria-label="Pages">
