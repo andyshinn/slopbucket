@@ -6,6 +6,7 @@ import Notice from "../../components/Notice.astro";
 import Progress from "../../components/Progress.astro";
 import Admin from "../../layouts/Admin.astro";
 import {
+  AI_DAILY_CAP_USD,
   CLASSIFY_PER_MINUTE,
   MAX_BACKFILL_DAYS,
   type ReclassifyPreview,
@@ -120,8 +121,17 @@ const sourceLabel = (s: string) => (s === "all" ? "all sources" : (SOURCE_LABELS
             </h1>
             <ul class="mt-3 list-disc space-y-1 pl-5 text-sm text-stone-700">
               <li>About {confirm.estimate.posts.toLocaleString()} posts to classify (rough estimate).</li>
-              <li>About ${confirm.estimate.costUsd.toFixed(2)} of Workers AI, within the $2/day AI Gateway cap.</li>
-              <li>At least {Math.ceil(confirm.estimate.hours)} hours at ~{CLASSIFY_PER_MINUTE} classifications a minute; longer if the daily cap is reached.</li>
+              {confirm.estimate.capDays > 1 ? (
+                <>
+                  <li>About ${confirm.estimate.costUsd.toFixed(2)} of Workers AI, more than the ${AI_DAILY_CAP_USD}/day AI Gateway cap.</li>
+                  <li>The cap spreads it over about {confirm.estimate.capDays} days: classifying pauses once a day's ${AI_DAILY_CAP_USD} is spent and resumes after the next daily cron.</li>
+                </>
+              ) : (
+                <>
+                  <li>About ${confirm.estimate.costUsd.toFixed(2)} of Workers AI, under the ${AI_DAILY_CAP_USD}/day AI Gateway cap.</li>
+                  <li>About {Math.ceil(confirm.estimate.hours)} hours at ~{CLASSIFY_PER_MINUTE} classifications a minute.</li>
+                </>
+              )}
               <li>Posts already stored are skipped. Everything lands in the review queue while the threshold is 1.</li>
             </ul>
           </>

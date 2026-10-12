@@ -301,8 +301,14 @@ const POSTS_PER_DAY: Record<string, number> = { hn: 284, lobsters: 7, github: 25
 const COST_PER_POST_USD = 0.0004;
 /** Planning rate for estimates (two at a time, 4-10s a call); the In progress section shows the measured rate. */
 export const CLASSIFY_PER_MINUTE = 12;
+/** The AI Gateway spend limit (set in the dashboard, not in code); spend past it waits for the next day. */
+export const AI_DAILY_CAP_USD = 2;
 
-export function backfillEstimate(choice: string, days: number): { posts: number; costUsd: number; hours: number } {
+export function backfillEstimate(
+  choice: string,
+  days: number,
+): { posts: number; costUsd: number; hours: number; capDays: number } {
   const posts = sourcesFor(choice).reduce((n, s) => n + (POSTS_PER_DAY[s] ?? 0) * days, 0);
-  return { posts, costUsd: posts * COST_PER_POST_USD, hours: posts / CLASSIFY_PER_MINUTE / 60 };
+  const costUsd = posts * COST_PER_POST_USD;
+  return { posts, costUsd, hours: posts / CLASSIFY_PER_MINUTE / 60, capDays: Math.ceil(costUsd / AI_DAILY_CAP_USD) };
 }

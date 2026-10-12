@@ -57,6 +57,8 @@ describe("run now and backfill", () => {
     const e = backfillEstimate("all", 90);
     expect(e.posts).toBeGreaterThan(20_000);
     expect(e.costUsd).toBeGreaterThan(5);
+    expect(e.capDays).toBe(Math.ceil(e.costUsd / 2));
+    expect(backfillEstimate("lobsters", 10).capDays).toBe(1);
     expect(backfillEstimate("lobsters", 10).posts).toBe(70);
   });
 });
