@@ -19,7 +19,7 @@ Where Slop Bucket stands, so a new session can pick up without the chat history.
 | 3. GitHub adapter (Reddit dropped, Product Hunt waiting) | Done (#4) |
 | 4. Admin review queue | Done (#5, #6) |
 | 5. Admin status panel and settings | Done (#8, #10) |
-| 6. 90-day backfill, review the queue | **Next**: re-classify for tags, then start the backfill |
+| 6. 90-day backfill, review the queue | **In progress**: the 90-day backfill is running (started 2026-10-12); review the queue as it fills |
 | 7. Tune prompt, few-shot, categories, trending weights | Started early: classifier accuracy (#7), categories v3 (#11), tag vocabulary (#14) |
 | 8. Lower the threshold, go public | Not started. Needs the public site (below) |
 
