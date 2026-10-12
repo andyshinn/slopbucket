@@ -89,6 +89,7 @@ jobs:
 
       - name: Short commit
         id: commit
+        if: steps.bootstrap.outputs.ready == 'true'
         run: echo "short=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Build site

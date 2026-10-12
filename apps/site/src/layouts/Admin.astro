@@ -67,7 +67,7 @@ const tabs: Tab[] = [
   </main>
   <footer class="mx-auto max-w-2xl px-4 pb-40 font-mono text-xs break-all text-stone-500">
     Commit {build.commitHref ? <a href={build.commitHref} class="text-lime-700 hover:underline">{build.commit}</a> : "unknown"}
-    · Version {build.versionId}
+    · Version <span title={build.versionId}>{build.versionShort}</span>
     {build.deployedAt && <span>· <time datetime={build.deployedAt}>{build.deployedAt.replace("T", " ").slice(0, 16)} UTC</time></span>}
   </footer>
 </Base>

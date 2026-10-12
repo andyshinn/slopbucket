@@ -35,8 +35,26 @@ describe("buildInfo", () => {
     expect(info.versionId).toBe("0c3f4f0e-1b2a-4c5d-8e9f-0a1b2c3d4e5f");
   });
 
-  it("has no commit for an untagged or odd tag", () => {
-    expect(buildInfo({ id: "x", tag: "", timestamp: "" }).commit).toBeNull();
-    expect(buildInfo({ id: "x", tag: "<script>", timestamp: "" }).commitHref).toBeNull();
+  const meta = (tag: string | undefined) => ({ id: "0c3f4f0e-1b2a-4c5d-8e9f-0a1b2c3d4e5f", tag, timestamp: "2026-10-12T06:00:00.000Z" }) as WorkerVersionMetadata;
+
+  it("shortens the version ID", () => {
+    expect(buildInfo(meta("a1b2c3d")).versionShort).toBe("0c3f4f0e");
+  });
+
+  it.each([
+    ["untagged", undefined],
+    ["empty", ""],
+    ["six characters", "a1b2c3"],
+    ["41 characters", "a".repeat(41)],
+    ["uppercase hex", "A1B2C3D4E5F6"],
+    ["not hex", "<script>"],
+  ])("has no commit for a tag that is %s", (_, tag) => {
+    const info = buildInfo(meta(tag));
+    expect(info.commit).toBeNull();
+    expect(info.commitHref).toBeNull();
+  });
+
+  it.each([["seven characters", "a1b2c3d"], ["40 characters", "a".repeat(40)]])("accepts a commit of %s", (_, tag) => {
+    expect(buildInfo(meta(tag)).commit).toBe(tag);
   });
 });
