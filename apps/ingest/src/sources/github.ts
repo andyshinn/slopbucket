@@ -10,6 +10,12 @@ const DAY = 86_400_000;
 export const DAILY_CREATED_LOOKBACK = 7 * DAY;
 const PAGE_SIZE = 100;
 const MAX_PAGES = 10; // GitHub search returns at most 1,000 results per query.
+// Search allows 30 requests/minute with a token and 10 without, shared by every job
+// using that token. FETCH_CONCURRENCY jobs can run at once (a backfill fans out into
+// one job per day), so each job paces itself to its share, plus a small margin.
+export const FETCH_CONCURRENCY = 2; // the sb-fetch consumer's max_concurrency in wrangler.jsonc; a test checks it
+export const SEARCH_PER_MINUTE = { token: 30, anon: 10 };
+export const searchPauseMs = (perMinute: number) => Math.ceil((60_000 * FETCH_CONCURRENCY) / perMinute) + 200;
 
 const repoSchema = z.object({
   full_name: z.string(),
@@ -86,8 +92,7 @@ export const github: Adapter = {
     // Backfills take repos created in the window; daily and manual runs take the last week.
     const createdFrom = mode === "backfill" ? since : until - DAILY_CREATED_LOOKBACK;
     const created = `created:${isoSeconds(createdFrom)}..${isoSeconds(until)}`;
-    // Search allows 30 requests/minute with a token and 10 without.
-    const pause = ctx.githubToken ? 2_100 : 6_500;
+    const pause = searchPauseMs(ctx.githubToken ? SEARCH_PER_MINUTE.token : SEARCH_PER_MINUTE.anon);
 
     let first = true;
     for (const topic of topics) {
