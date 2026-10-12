@@ -1,6 +1,7 @@
 ---
 import { env } from "cloudflare:workers";
 import { navCounts } from "../lib/admin-nav.ts";
+import { buildInfo } from "../lib/version.ts";
 import Base from "./Base.astro";
 
 interface Props {
@@ -13,6 +14,7 @@ const { title, section, wide = false } = Astro.props;
 const width = wide ? "max-w-2xl lg:max-w-5xl" : "max-w-2xl";
 const email = Astro.locals.adminEmail;
 const counts = await navCounts(env.DB);
+const build = buildInfo(env.CF_VERSION_METADATA);
 interface Tab {
   id: NonNullable<Props["section"]>;
   href: string;
@@ -63,7 +65,12 @@ const tabs: Tab[] = [
       }
     </nav>
   </header>
-  <main class={`mx-auto ${width} px-4 pt-4 pb-40`}>
+  <main class={`mx-auto ${width} px-4 pt-4 pb-8`}>
     <slot />
   </main>
+  <footer class={`mx-auto ${width} px-4 pb-40 font-mono text-xs break-all text-stone-500`}>
+    Commit {build.commitHref ? <a href={build.commitHref} class="text-lime-700 hover:underline">{build.commit}</a> : "unknown"}
+    · Version <span title={build.versionId}>{build.versionShort}</span>
+    {build.deployedAt && <span>· <time datetime={build.deployedAt}>{build.deployedAt.replace("T", " ").slice(0, 16)} UTC</time></span>}
+  </footer>
 </Base>
