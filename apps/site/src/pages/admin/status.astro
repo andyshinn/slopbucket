@@ -104,6 +104,8 @@ const countRows = [
   ["rejected", "Rejected"],
   ["dropped", "Dropped"],
 ] as const;
+// Whole dollars print without cents ("$15"), anything else with them ("$0.50").
+const usd = (n: number | null) => (n === null ? "" : Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`);
 const sourceLabel = (s: string) => (s === "all" ? "all sources" : (SOURCE_LABELS[s] ?? s));
 ---
 
@@ -121,16 +123,12 @@ const sourceLabel = (s: string) => (s === "all" ? "all sources" : (SOURCE_LABELS
             </h1>
             <ul class="mt-3 list-disc space-y-1 pl-5 text-sm text-stone-700">
               <li>About {confirm.estimate.posts.toLocaleString()} posts to classify (rough estimate).</li>
-              {confirm.estimate.capDays > 1 ? (
-                <>
-                  <li>About ${confirm.estimate.costUsd.toFixed(2)} of Workers AI, more than the ${AI_DAILY_CAP_USD}/day AI Gateway cap.</li>
-                  <li>The cap spreads it over about {confirm.estimate.capDays} days: classifying pauses once a day's ${AI_DAILY_CAP_USD} is spent and resumes after the next daily cron.</li>
-                </>
-              ) : (
-                <>
-                  <li>About ${confirm.estimate.costUsd.toFixed(2)} of Workers AI{AI_DAILY_CAP_USD ? `, under the $${AI_DAILY_CAP_USD}/day AI Gateway cap.` : "."}</li>
-                  <li>About {Math.ceil(confirm.estimate.hours)} hours at ~{CLASSIFY_PER_MINUTE} classifications a minute.</li>
-                </>
+              <li>
+                About ${confirm.estimate.costUsd.toFixed(2)} of Workers AI{AI_DAILY_CAP_USD ? `, ${confirm.estimate.capDays > 1 ? "more than" : "under"} the ${usd(AI_DAILY_CAP_USD)}/day AI Gateway cap.` : "."}
+              </li>
+              <li>About {Math.ceil(confirm.estimate.hours)} hours of classifying at ~{CLASSIFY_PER_MINUTE} a minute.</li>
+              {confirm.estimate.capDays > 1 && (
+                <li>The cap spreads it over at least {confirm.estimate.capDays} days: classifying pauses once a day's {usd(AI_DAILY_CAP_USD)} is spent and resumes after the next daily cron.</li>
               )}
               <li>Posts already stored are skipped. Everything lands in the review queue while the threshold is 1.</li>
             </ul>

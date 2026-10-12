@@ -314,6 +314,10 @@ function dailyCap(limits: typeof gateway.spend_limits): number | null {
   return limits.enabled && rule?.enabled && rule.window === 86_400 ? rule.limit : null;
 }
 
+/**
+ * `hours` is classifying time at the planning rate; `capDays` is the fewest days the daily cap
+ * allows for the cost. The run takes at least the longer of the two.
+ */
 export function backfillEstimate(
   choice: string,
   days: number,

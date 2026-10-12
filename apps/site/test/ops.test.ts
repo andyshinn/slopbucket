@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
+import gateway from "../../../infra/ai-gateway.json";
 import {
   AI_DAILY_CAP_USD,
   backfillEstimate,
@@ -58,8 +59,11 @@ describe("run now and backfill", () => {
     const e = backfillEstimate("all", 90);
     expect(e.posts).toBeGreaterThan(20_000);
     expect(e.costUsd).toBeGreaterThan(5);
-    expect(AI_DAILY_CAP_USD).toBeGreaterThan(0);
+    expect(AI_DAILY_CAP_USD).toBe(gateway.spend_limits.rules.find((r) => r.id === "daily-cap")?.limit);
     expect(e.capDays).toBe(Math.ceil(e.costUsd / (AI_DAILY_CAP_USD ?? 1)));
+    // Enough days to cost about two days' cap.
+    const perDay = backfillEstimate("all", 1).costUsd;
+    expect(backfillEstimate("all", Math.ceil((2 * (AI_DAILY_CAP_USD ?? 1)) / perDay)).capDays).toBeGreaterThanOrEqual(2);
     expect(backfillEstimate("lobsters", 10).capDays).toBe(1);
     expect(backfillEstimate("lobsters", 10).posts).toBe(70);
   });
