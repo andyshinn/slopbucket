@@ -19,7 +19,7 @@ Where Slop Bucket stands, so a new session can pick up without the chat history.
 | 3. GitHub adapter (Reddit dropped, Product Hunt waiting) | Done (#4) |
 | 4. Admin review queue | Done (#5, #6) |
 | 5. Admin status panel and settings | Done (#8, #10) |
-| 6. 90-day backfill, review the queue | **Next**: re-classify for tags, then start the backfill |
+| 6. 90-day backfill, review the queue | **In progress**: the 90-day backfill is running (started 2026-10-12); review the queue as it fills |
 | 7. Tune prompt, few-shot, categories, trending weights | Started early: classifier accuracy (#7), categories v3 (#11), tag vocabulary (#14) |
 | 8. Lower the threshold, go public | Not started. Needs the public site (below) |
 
@@ -32,7 +32,7 @@ Built outside the plan's step list, all needed before launch: the daily trending
 3. **Review the queue** as it fills. Use Tools → Merge for duplicate tools. Mark good decisions as few-shot examples.
 4. **Build while the backfill runs:**
    - ~~Queue page improvements~~: done (Resolves to box, tag chips, reason quote, lime Approve).
-   - **The public site**, following the handoff's suggested build order. Steps 1 (tokens, layout, theme, `/about`), 2 (home trending list, rows, `/avatar/[owner]`, 5-minute edge cache) 3 (filters with faceted counts, sort, `/search`, `/new`, `/category/[name]`, the phone filter dialog) and 4 (tool pages with merge redirects, the report form, per-IP rate limits) are done. The admin Reports page (handoff step 8) is done too. Step 5 (admin restyle: top bar with logo, ADMIN chip and View site; scrolling underline tabs with counts; stone neutrals; the queue polish and lime Approve came earlier in #19) is done. **Next:** step 6's remaining polish (Tools list table and edit page per the handoff), the Status page restyle, or step 9, the desktop admin shell. Merge redirects (301 from a merged tool's slug) are part of the tool page.
+   - **The public site**, following the handoff's suggested build order. Steps 1 (tokens, layout, theme, `/about`), 2 (home trending list, rows, `/avatar/[owner]`, 5-minute edge cache), 3 (filters with faceted counts, sort, `/search`, `/new`, `/category/[name]`, the phone filter dialog) and 4 (tool pages with merge redirects, the report form, per-IP rate limits) are done. The admin Reports page (handoff step 8) is done too. Step 5 (admin restyle: top bar with logo, ADMIN chip and View site; scrolling underline tabs with counts; stone neutrals; the queue polish and lime Approve came earlier in #19) is done. Step 6's Tools polish (desktop table with tiles and category badges, stacked list on phones; edit page with tile header, description count and hint, segmented Source control, "via merge" aliases, "Show all" posts, and an Other actions card) is done. **Next:** the Status page restyle, or step 9, the desktop admin shell. Merge redirects (301 from a merged tool's slug) are part of the tool page.
    - ~~Reports page (admin)~~: done.
 5. **Step 7 tuning** against the backfilled data, then **step 8**: lower `review_threshold`, re-classify unreviewed posts so confident ones auto-publish, and go public.
 

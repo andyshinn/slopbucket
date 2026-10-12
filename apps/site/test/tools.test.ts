@@ -89,11 +89,18 @@ describe("updateTool", () => {
       name: "Worktrunk", slug: "worktrunk", description: "Git worktrees for agents.", category: "agent-tools", tags: ["claude-code"],
       homepage_url: "https://worktrunk.dev/", github_repo: "max/worktrunk", is_open_source: 1,
     });
-    expect(t!.aliases).toEqual([
+    expect(t!.aliases.map(({ kind, value }) => ({ kind, value }))).toEqual([
       { kind: "repo", value: "max/worktrunk" },
       { kind: "domain", value: "worktrunk.dev" },
       { kind: "name", value: "worktrunk" },
     ]);
+  });
+
+  it("limits posts unless asked for more", async () => {
+    const id = await tool("Busy");
+    for (let i = 0; i < 3; i++) await post(id);
+    expect(await getTool(db, id, 2)).toMatchObject({ postCount: 3, posts: [{}, {}] });
+    expect((await getTool(db, id, 500))!.posts).toHaveLength(3);
   });
 
   it("refuses a taken slug, another tool's repo, a bad category and a long description", async () => {
@@ -103,7 +110,10 @@ describe("updateTool", () => {
     await expect(updateTool(db, id, valid({ slug: "taken" }))).rejects.toThrow('"taken" is already used');
     await expect(updateTool(db, id, valid())).rejects.toThrow("max/worktrunk already belongs to Other. Merge");
     await expect(updateTool(db, id, valid({ github_repo: "", category: "sdk" }))).rejects.toThrow("category");
-    await expect(updateTool(db, id, valid({ github_repo: "", description: "x".repeat(141) }))).rejects.toThrow("under 140");
+    await expect(updateTool(db, id, valid({ github_repo: "", description: "x".repeat(141) }))).rejects.toThrow("keep it to 140");
+    // Newlines and runs of spaces collapse before the length check, matching what the one-line input sends.
+    await updateTool(db, id, valid({ github_repo: "", description: `Git\n  worktrees${" ".repeat(150)}for agents.` }));
+    expect((await getTool(db, id))!.description).toBe("Git worktrees for agents.");
     await expect(updateTool(db, id, valid({ github_repo: "", slug: "Bad Slug" }))).rejects.toThrow(ToolError);
   });
 });
@@ -118,9 +128,9 @@ describe("aliases", () => {
     await expect(addAlias(db, id, "domain", "max.github.io")).rejects.toThrow("shared host");
     await expect(addAlias(db, id, "repo", "acme/other")).rejects.toThrow("already belongs to Other");
     expect((await getTool(db, id))!.aliases).toEqual([
-      { kind: "repo", value: "max/wt" },
-      { kind: "domain", value: "worktrunk.dev" },
-      { kind: "name", value: "worktrunk" },
+      { kind: "repo", value: "max/wt", via_merge: false },
+      { kind: "domain", value: "worktrunk.dev", via_merge: false },
+      { kind: "name", value: "worktrunk", via_merge: false },
     ]);
     await removeAlias(db, id, "repo", "max/wt");
     await removeAlias(db, id, "repo", "acme/other"); // not this tool's: no effect
@@ -168,6 +178,12 @@ describe("merge and split", () => {
     });
     expect([...k!.tags].sort()).toEqual(["claude-code", "cli"]);
     expect(k!.aliases.map((a) => a.value).sort()).toEqual(["max/worktrunk", "worktrunk", "worktrunkcli"]);
+    // Only the moved alias is marked; the target's own aliases (here before and after the merge) are not.
+    expect(k!.aliases.filter((a) => a.via_merge).map((a) => a.value)).toEqual(["worktrunkcli"]);
+    // Removed and re-added by hand, it still counts as via merge while the merge is active (DESIGN.md).
+    await removeAlias(db, keep, "name", "worktrunkcli");
+    await addAlias(db, keep, "name", "worktrunkcli");
+    expect((await getTool(db, keep))!.aliases.find((a) => a.value === "worktrunkcli")!.via_merge).toBe(true);
     expect((await getTool(db, dupe))!.status).toBe("hidden");
     expect(await mergedInto(db, dupe)).toMatchObject({ id: keep, name: "Worktrunk" });
     const listed = await listTools(db, { status: "hidden" });
@@ -180,7 +196,7 @@ describe("merge and split", () => {
     expect(await splitMerge(db, history!.id)).toEqual({ fromId: dupe, posts: 1 });
     const d = await getTool(db, dupe);
     expect(d).toMatchObject({ status: "published", postCount: 1, last_post_at: "2026-10-06T00:00:00.000Z" });
-    expect(d!.aliases).toEqual([{ kind: "name", value: "worktrunkcli" }]);
+    expect(d!.aliases).toEqual([{ kind: "name", value: "worktrunkcli", via_merge: false }]);
     expect(await getTool(db, keep)).toMatchObject({ postCount: 1, last_post_at: "2026-10-01T00:00:00.000Z" });
     expect(kept).toBeGreaterThan(0);
     expect(await mergeHistory(db, keep)).toEqual([]);
