@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  AI_DAILY_CAP_USD,
   backfillEstimate,
   classifyProgress,
   etaMinutesFor,
@@ -57,7 +58,7 @@ describe("run now and backfill", () => {
     const e = backfillEstimate("all", 90);
     expect(e.posts).toBeGreaterThan(20_000);
     expect(e.costUsd).toBeGreaterThan(5);
-    expect(e.capDays).toBe(Math.ceil(e.costUsd / 2));
+    expect(e.capDays).toBe(Math.ceil(e.costUsd / AI_DAILY_CAP_USD));
     expect(backfillEstimate("lobsters", 10).capDays).toBe(1);
     expect(backfillEstimate("lobsters", 10).posts).toBe(70);
   });

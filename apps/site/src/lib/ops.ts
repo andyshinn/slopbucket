@@ -9,6 +9,7 @@ import {
   fetchJobs,
   resetUnreviewedQueued,
 } from "@slop-bucket/core";
+import gateway from "../../../../infra/ai-gateway.json";
 
 export interface SourceRun {
   mode: string;
@@ -301,8 +302,17 @@ const POSTS_PER_DAY: Record<string, number> = { hn: 284, lobsters: 7, github: 25
 const COST_PER_POST_USD = 0.0004;
 /** Planning rate for estimates (two at a time, 4-10s a call); the In progress section shows the measured rate. */
 export const CLASSIFY_PER_MINUTE = 12;
-/** The AI Gateway spend limit (set in the dashboard, not in code); spend past it waits for the next day. */
-export const AI_DAILY_CAP_USD = 2;
+/**
+ * The AI Gateway's daily spend limit, read from the config deploy.yml applies to the gateway,
+ * so the estimate follows it. Spend past it waits for the next day.
+ */
+export const AI_DAILY_CAP_USD = dailyCap(gateway.spend_limits.rules);
+
+function dailyCap(rules: { id: string; limit: number; window: number }[]): number {
+  const rule = rules.find((r) => r.id === "daily-cap");
+  if (!rule || rule.window !== 86_400) throw new Error("infra/ai-gateway.json needs a one-day 'daily-cap' spend limit rule.");
+  return rule.limit;
+}
 
 export function backfillEstimate(
   choice: string,
