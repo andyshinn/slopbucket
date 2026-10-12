@@ -87,6 +87,10 @@ jobs:
           workingDirectory: apps/ingest
           command: deploy
 
+      - name: Short commit
+        id: commit
+        run: echo "short=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Build site
         if: steps.bootstrap.outputs.ready == 'true'
         run: pnpm --filter @slop-bucket/site build
@@ -99,7 +103,9 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           packageManager: pnpm
           workingDirectory: apps/site
-          command: deploy
+          # Tags the Worker version with the commit; the admin footer reads it back
+          # through the version_metadata binding.
+          command: deploy --tag ${{ steps.commit.outputs.short }}
 
       - name: Summary
         if: steps.bootstrap.outputs.ready == 'true'
