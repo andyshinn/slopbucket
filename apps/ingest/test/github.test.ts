@@ -2,10 +2,11 @@ import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { normalizedPostSchema, type NormalizedPost } from "@slop-bucket/core";
 import type { Fetcher } from "../src/deps.ts";
-import { DAILY_CREATED_LOOKBACK, github, parseTrending, repoTitle } from "../src/sources/github.ts";
+import { DAILY_CREATED_LOOKBACK, FETCH_CONCURRENCY, SEARCH_PER_MINUTE, github, parseTrending, repoTitle, searchPauseMs } from "../src/sources/github.ts";
 import type { SourceContext } from "../src/sources/types.ts";
 import searchFixture from "./fixtures/github-search.json";
 import trendingHtml from "./fixtures/github-trending.html?raw";
+import wranglerConfig from "../wrangler.jsonc?raw";
 import { fakeFetch, json } from "./helpers.ts";
 
 const UNTIL = Date.parse("2026-10-06T06:00:00Z");
@@ -42,7 +43,7 @@ describe("github adapter", () => {
     expect(qs[0]).toBe(
       `topic:mcp created:${new Date(UNTIL - DAILY_CREATED_LOOKBACK).toISOString().replace(".000Z", "Z")}..2026-10-06T06:00:00Z stars:>=10 archived:false`,
     );
-    expect(c.slept.every((ms) => ms === 13_000)).toBe(true); // unauthenticated pacing
+    expect(c.slept.every((ms) => ms === searchPauseMs(SEARCH_PER_MINUTE.anon))).toBe(true); // unauthenticated pacing
 
     const posts = pages.flat();
     for (const p of posts) normalizedPostSchema.parse(p);
@@ -76,7 +77,16 @@ describe("github adapter", () => {
     const c = ctx(spy, { githubToken: "ghp_test" });
     await collect(github.fetchPosts({ since: 0, until: UNTIL, mode: "daily" }, c));
     expect(auth).toBe("Bearer ghp_test");
-    expect(c.slept.every((ms) => ms === 4_200)).toBe(true);
+    expect(c.slept.every((ms) => ms === searchPauseMs(SEARCH_PER_MINUTE.token))).toBe(true);
+  });
+
+  it("paces concurrent fetch jobs to fit one token's search budget together", () => {
+    // The pacing assumes the sb-fetch consumer runs at most FETCH_CONCURRENCY jobs at once.
+    const consumer = /"queue":\s*"sb-fetch"[^}]*"max_concurrency":\s*(\d+)/.exec(wranglerConfig);
+    expect(Number(consumer?.[1])).toBe(FETCH_CONCURRENCY);
+    for (const perMinute of Object.values(SEARCH_PER_MINUTE)) {
+      expect(FETCH_CONCURRENCY * (60_000 / searchPauseMs(perMinute))).toBeLessThan(perMinute);
+    }
   });
 
   it("waits out a short rate limit once, then fails on a second limit", async () => {
