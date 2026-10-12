@@ -42,7 +42,7 @@ describe("github adapter", () => {
     expect(qs[0]).toBe(
       `topic:mcp created:${new Date(UNTIL - DAILY_CREATED_LOOKBACK).toISOString().replace(".000Z", "Z")}..2026-10-06T06:00:00Z stars:>=10 archived:false`,
     );
-    expect(c.slept.every((ms) => ms === 6_500)).toBe(true); // unauthenticated pacing
+    expect(c.slept.every((ms) => ms === 13_000)).toBe(true); // unauthenticated pacing
 
     const posts = pages.flat();
     for (const p of posts) normalizedPostSchema.parse(p);
@@ -76,7 +76,7 @@ describe("github adapter", () => {
     const c = ctx(spy, { githubToken: "ghp_test" });
     await collect(github.fetchPosts({ since: 0, until: UNTIL, mode: "daily" }, c));
     expect(auth).toBe("Bearer ghp_test");
-    expect(c.slept.every((ms) => ms === 2_100)).toBe(true);
+    expect(c.slept.every((ms) => ms === 4_200)).toBe(true);
   });
 
   it("waits out a short rate limit once, then fails on a second limit", async () => {

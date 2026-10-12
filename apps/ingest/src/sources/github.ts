@@ -86,8 +86,10 @@ export const github: Adapter = {
     // Backfills take repos created in the window; daily and manual runs take the last week.
     const createdFrom = mode === "backfill" ? since : until - DAILY_CREATED_LOOKBACK;
     const created = `created:${isoSeconds(createdFrom)}..${isoSeconds(until)}`;
-    // Search allows 30 requests/minute with a token and 10 without.
-    const pause = ctx.githubToken ? 2_100 : 6_500;
+    // Search allows 30 requests/minute with a token and 10 without, shared by every
+    // job using that token. The fetch queue runs two jobs at once (a backfill fans
+    // out into one job per day), so each job takes half: about 14/min and 4.6/min.
+    const pause = ctx.githubToken ? 4_200 : 13_000;
 
     let first = true;
     for (const topic of topics) {
