@@ -28,7 +28,7 @@ Built outside the plan's step list, all needed before launch: the daily trending
 ## Next steps, in order
 
 1. **Re-classify for tags** (the owner, from the phone): Admin → Status → "Re-classify unreviewed posts…". The 433 posts queued before the tag vocabulary (#14) still carry tags from the migration, not from the new prompt. About $0.17 and 35 minutes.
-2. **Start the 90-day backfill:** Status → Backfill, all sources, 90 days. That's about 28,000 posts and $11. The $2/day AI Gateway cap spreads it over about 5 days, and the In progress card shows progress.
+2. **Start the 90-day backfill:** Status → Backfill, all sources, 90 days. That's about 28,000 posts and $11. The AI Gateway cap is $15/day, so the cap doesn't slow it: it takes about 40 hours at ~12 a minute, and the In progress card shows progress.
 3. **Review the queue** as it fills. Use Tools → Merge for duplicate tools. Mark good decisions as few-shot examples.
 4. **Build while the backfill runs:**
    - ~~Queue page improvements~~: done (Resolves to box, tag chips, reason quote, lime Approve).
@@ -47,7 +47,7 @@ Built outside the plan's step list, all needed before launch: the daily trending
 ## Production snapshot (2026-10-09)
 
 - **Site:** https://slopbucket.app. Admin at `/admin`, behind Cloudflare Access.
-- **Resources:** Workers `sb-ingest` and `sb-site`; D1 `sb`; R2 `sb-articles`; queues `sb-fetch` and `sb-classify`; AI Gateway `sb` (its $2/day cap counts GLM spend, confirmed in Analytics).
+- **Resources:** Workers `sb-ingest` and `sb-site`; D1 `sb`; R2 `sb-articles`; queues `sb-fetch` and `sb-classify`; AI Gateway `sb` (its daily cap, $15 in `infra/ai-gateway.json`, counts GLM spend, confirmed in Analytics; `deploy.yml` reapplies the file on every deploy, so change the cap there, not in the dashboard).
 - **Crons (UTC):** 06:00 fetches all sources; 07:00 runs the trending job (engagement, GitHub stars, scores).
 - **Migrations applied:** 0001–0010.
 - **Data:** 511 queued posts, 2,421 dropped, 2 published, 1 rejected; 461 tools.

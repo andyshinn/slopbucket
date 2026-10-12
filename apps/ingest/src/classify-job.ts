@@ -159,8 +159,8 @@ export async function loadFewShot(db: D1Database, limit: number, categories: rea
 }
 
 /**
- * Most posts the daily cron re-enqueues: about what the $2/day AI Gateway cap
- * buys at ~$0.0004 a post, so a capped backfill resumes at full speed each day.
+ * Most posts the daily cron re-enqueues (about $2 of classifying at ~$0.0004 a
+ * post); any still pending past this wait for the next day's run.
  */
 export const REQUEUE_LIMIT = 5000;
 
