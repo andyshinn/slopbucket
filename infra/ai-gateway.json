@@ -14,7 +14,7 @@
         "id": "daily-cap",
         "enabled": true,
         "limitType": "cost",
-        "limit": 2,
+        "limit": 15,
         "window": 86400,
         "technique": "fixed"
       }

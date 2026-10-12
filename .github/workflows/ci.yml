@@ -25,4 +25,4 @@ jobs:
       - name: Migration dry run (local D1)
         run: pnpm db:migrate:local
       - name: Validate AI Gateway config
-        run: jq -e '.id and (.spend_limits.rules | length > 0)' infra/ai-gateway.json
+        run: jq -e '.id and .spend_limits.enabled and (.spend_limits.rules | any(.id == "daily-cap" and .enabled and .window == 86400))' infra/ai-gateway.json

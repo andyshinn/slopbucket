@@ -9,6 +9,7 @@ import {
   fetchJobs,
   resetUnreviewedQueued,
 } from "@slop-bucket/core";
+import gateway from "../../../../infra/ai-gateway.json";
 
 export interface SourceRun {
   mode: string;
@@ -301,8 +302,27 @@ const POSTS_PER_DAY: Record<string, number> = { hn: 284, lobsters: 7, github: 25
 const COST_PER_POST_USD = 0.0004;
 /** Planning rate for estimates (two at a time, 4-10s a call); the In progress section shows the measured rate. */
 export const CLASSIFY_PER_MINUTE = 12;
+/**
+ * The AI Gateway's daily spend limit, read from the config deploy.yml applies to the gateway,
+ * so the estimate follows it. Spend past it waits for the next day. Null when the enabled
+ * one-day 'daily-cap' rule is missing (CI checks for it).
+ */
+export const AI_DAILY_CAP_USD = dailyCap(gateway.spend_limits);
 
-export function backfillEstimate(choice: string, days: number): { posts: number; costUsd: number; hours: number } {
+function dailyCap(limits: typeof gateway.spend_limits): number | null {
+  const rule = limits.rules.find((r) => r.id === "daily-cap");
+  return limits.enabled && rule?.enabled && rule.window === 86_400 ? rule.limit : null;
+}
+
+/**
+ * `hours` is classifying time at the planning rate; `capDays` is the fewest days the daily cap
+ * allows for the cost. The run takes at least the longer of the two.
+ */
+export function backfillEstimate(
+  choice: string,
+  days: number,
+): { posts: number; costUsd: number; hours: number; capDays: number } {
   const posts = sourcesFor(choice).reduce((n, s) => n + (POSTS_PER_DAY[s] ?? 0) * days, 0);
-  return { posts, costUsd: posts * COST_PER_POST_USD, hours: posts / CLASSIFY_PER_MINUTE / 60 };
+  const costUsd = posts * COST_PER_POST_USD;
+  return { posts, costUsd, hours: posts / CLASSIFY_PER_MINUTE / 60, capDays: AI_DAILY_CAP_USD ? Math.ceil(costUsd / AI_DAILY_CAP_USD) : 1 };
 }
