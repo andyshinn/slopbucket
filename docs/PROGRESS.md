@@ -63,6 +63,7 @@ Built outside the plan's step list, all needed before launch: the daily trending
 - **Duplicate-URL reuse** needs the same classifier fingerprint (model, reasoning, prompt, categories, tags). Re-classify jobs are `force: true`.
 - **Trending:** GitHub posts count as a source, but their stars aren't counted as upvotes; stars enter only as 7-day growth. Queued tools are scored too.
 - **Tags:** Option C (four groups, Interface overlaps categories on purpose). Languages come from GitHub stats, not tags.
+- **Deployed version:** `deploy.yml` tags each `sb-site` Worker version with the 12-character commit (`wrangler deploy --tag`); the admin footer reads it, the Cloudflare version ID and the upload time from the `version_metadata` binding. Versions uploaded another way show "Commit unknown".
 - **UI:** Tailwind v4, Heroicons, Tailwind Plus Elements only when JS is needed. No React. The admin ships no JavaScript.
 - **Naming:** Slop Bucket at slopbucket.app, `sb-*` resources, `@slop-bucket/*` packages.
 - **Logo:** the round-3 pail pig (`docs/brand/logo-concepts/pail-pig-round-3/`): the lime variant on light pages, the dark variant in dark mode, and the lime favicon. Copies without the C2PA metadata are in `apps/site/public/`.
