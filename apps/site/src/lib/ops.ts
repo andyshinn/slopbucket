@@ -304,14 +304,14 @@ const COST_PER_POST_USD = 0.0004;
 export const CLASSIFY_PER_MINUTE = 12;
 /**
  * The AI Gateway's daily spend limit, read from the config deploy.yml applies to the gateway,
- * so the estimate follows it. Spend past it waits for the next day.
+ * so the estimate follows it. Spend past it waits for the next day. Null when the enabled
+ * one-day 'daily-cap' rule is missing (CI checks for it).
  */
-export const AI_DAILY_CAP_USD = dailyCap(gateway.spend_limits.rules);
+export const AI_DAILY_CAP_USD = dailyCap(gateway.spend_limits);
 
-function dailyCap(rules: { id: string; limit: number; window: number }[]): number {
-  const rule = rules.find((r) => r.id === "daily-cap");
-  if (!rule || rule.window !== 86_400) throw new Error("infra/ai-gateway.json needs a one-day 'daily-cap' spend limit rule.");
-  return rule.limit;
+function dailyCap(limits: typeof gateway.spend_limits): number | null {
+  const rule = limits.rules.find((r) => r.id === "daily-cap");
+  return limits.enabled && rule?.enabled && rule.window === 86_400 ? rule.limit : null;
 }
 
 export function backfillEstimate(
@@ -320,5 +320,5 @@ export function backfillEstimate(
 ): { posts: number; costUsd: number; hours: number; capDays: number } {
   const posts = sourcesFor(choice).reduce((n, s) => n + (POSTS_PER_DAY[s] ?? 0) * days, 0);
   const costUsd = posts * COST_PER_POST_USD;
-  return { posts, costUsd, hours: posts / CLASSIFY_PER_MINUTE / 60, capDays: Math.ceil(costUsd / AI_DAILY_CAP_USD) };
+  return { posts, costUsd, hours: posts / CLASSIFY_PER_MINUTE / 60, capDays: AI_DAILY_CAP_USD ? Math.ceil(costUsd / AI_DAILY_CAP_USD) : 1 };
 }

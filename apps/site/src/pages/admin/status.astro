@@ -128,7 +128,7 @@ const sourceLabel = (s: string) => (s === "all" ? "all sources" : (SOURCE_LABELS
                 </>
               ) : (
                 <>
-                  <li>About ${confirm.estimate.costUsd.toFixed(2)} of Workers AI, under the ${AI_DAILY_CAP_USD}/day AI Gateway cap.</li>
+                  <li>About ${confirm.estimate.costUsd.toFixed(2)} of Workers AI{AI_DAILY_CAP_USD ? `, under the $${AI_DAILY_CAP_USD}/day AI Gateway cap.` : "."}</li>
                   <li>About {Math.ceil(confirm.estimate.hours)} hours at ~{CLASSIFY_PER_MINUTE} classifications a minute.</li>
                 </>
               )}
