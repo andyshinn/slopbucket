@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aboutDuration, githubHref, safeHref } from "../src/lib/ui.ts";
+import { aboutDuration, githubHref, safeHref, shortDuration } from "../src/lib/ui.ts";
 import { buildInfo } from "../src/lib/version.ts";
 
 describe("link helpers", () => {
@@ -24,6 +24,17 @@ describe("aboutDuration", () => {
     expect(aboutDuration(45)).toBe("about 45 minutes");
     expect(aboutDuration(150)).toBe("about 3 hours");
     expect(aboutDuration(5 * 1440)).toBe("about 5 days");
+  });
+});
+
+describe("shortDuration", () => {
+  it("shows seconds, minutes or hours", () => {
+    expect(shortDuration(400)).toBe("0s");
+    expect(shortDuration(9_000)).toBe("9s");
+    expect(shortDuration(90_000)).toBe("1m 30s");
+    expect(shortDuration(120_000)).toBe("2m");
+    expect(shortDuration(7_500_000)).toBe("2h 5m");
+    expect(shortDuration(-5)).toBe("0s");
   });
 });
 

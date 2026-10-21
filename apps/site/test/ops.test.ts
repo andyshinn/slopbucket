@@ -1,9 +1,10 @@
 import { env } from "cloudflare:workers";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import gateway from "../../../infra/ai-gateway.json";
 import {
   AI_DAILY_CAP_USD,
   backfillEstimate,
+  classifierModel,
   classifyProgress,
   etaMinutesFor,
   operations,
@@ -134,7 +135,7 @@ describe("sourceStatuses", () => {
       run("github", "2026-10-05T06:00:00.000Z", 0, "GitHub search -> 403"),
     ]);
     const s = Object.fromEntries((await sourceStatuses(db)).map((x) => [x.source, x]));
-    expect(s.hn).toMatchObject({ weekAverage: 1050, dropWarning: true });
+    expect(s.hn).toMatchObject({ weekAverage: 1050, latestItems: 50, dropWarning: true });
     expect(s.hn!.last!.items_fetched).toBe(50);
     expect(s.lobsters).toMatchObject({ weekAverage: null, dropWarning: false });
     expect(s.github!.last!.error).toContain("403");
@@ -159,7 +160,30 @@ describe("sourceStatuses", () => {
     ]);
     const hn = (await sourceStatuses(db)).find((x) => x.source === "hn")!;
     expect(hn.last).toMatchObject({ finished_at: null, items_fetched: null });
-    expect(hn).toMatchObject({ weekAverage: 1100, dropWarning: false });
+    expect(hn).toMatchObject({ weekAverage: 1100, latestItems: 1000, dropWarning: false });
+  });
+});
+
+describe("classifierModel", () => {
+  const set = (key: string, value: unknown) =>
+    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").bind(key, JSON.stringify(value));
+  // Other tests read model_id from the seeded settings, so put them back.
+  let saved: { key: string; value: string }[] = [];
+  beforeEach(async () => {
+    saved = (await db.prepare("SELECT key, value FROM settings WHERE key IN ('model_id', 'model_reasoning_effort')").all<{ key: string; value: string }>()).results;
+  });
+  afterEach(async () => {
+    await db.batch(saved.map((r) => db.prepare("UPDATE settings SET value = ? WHERE key = ?").bind(r.value, r.key)));
+  });
+
+  it("reads the model ID and reasoning effort from settings", async () => {
+    await db.batch([set("model_id", "@cf/zai-org/glm-5.3-flash"), set("model_reasoning_effort", "low")]);
+    expect(await classifierModel(db)).toEqual({ id: "@cf/zai-org/glm-5.3-flash", effort: "low" });
+  });
+
+  it("treats an empty effort as none", async () => {
+    await set("model_reasoning_effort", "").run();
+    expect((await classifierModel(db)).effort).toBeNull();
   });
 });
 

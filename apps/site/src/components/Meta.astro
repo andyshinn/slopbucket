@@ -1,0 +1,9 @@
+---
+// A mono meta line ("5h ago · 251 items · 1m 30s") that wraps between parts, never inside one.
+interface Props {
+  parts: string[];
+}
+const { parts } = Astro.props;
+---
+
+{parts.map((p, i) => <>{i > 0 && " · "}<span class="whitespace-nowrap">{p}</span></>)}
