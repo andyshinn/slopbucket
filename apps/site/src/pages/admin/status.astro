@@ -2,6 +2,7 @@
 import { env } from "cloudflare:workers";
 import { ENABLED_SOURCES } from "@slop-bucket/core";
 import Icon from "../../components/Icon.astro";
+import Meta from "../../components/Meta.astro";
 import Notice from "../../components/Notice.astro";
 import Progress from "../../components/Progress.astro";
 import Admin from "../../layouts/Admin.astro";
@@ -10,7 +11,11 @@ import {
   CLASSIFY_PER_MINUTE,
   MAX_BACKFILL_DAYS,
   type ReclassifyPreview,
+  type ClassifyProgress,
+  type SourceRun,
+  type SourceStatus,
   backfillEstimate,
+  classifierModel,
   classifyProgress,
   etaMinutesFor,
   operations,
@@ -23,7 +28,7 @@ import {
   startBackfill,
   trendingStatus,
 } from "../../lib/ops.ts";
-import { SOURCE_LABELS, aboutDuration, btnPrimary, btnSecondary, card, input, label, timeAgo } from "../../lib/ui.ts";
+import { SOURCE_LABELS, aboutDuration, btnPrimary, btnSecondary, card, input, label, num, shortDuration, timeAgo } from "../../lib/ui.ts";
 
 type Confirm =
   | { kind: "backfill"; source: string; days: number; estimate: ReturnType<typeof backfillEstimate> }
@@ -31,6 +36,11 @@ type Confirm =
 
 let error: string | null = null;
 let confirm: Confirm | null = null;
+// The backfill form is its own screen (Jobs → Start a backfill); it comes back with the error if the days are invalid.
+let backfillForm = Astro.url.searchParams.get("job") === "backfill";
+// What the form shows: the design's 90-day window at first, the submitted values after an error.
+let bfSource = "all";
+let bfDays = "90";
 
 if (Astro.request.method === "POST") {
   const form = await Astro.request.formData();
@@ -49,7 +59,12 @@ if (Astro.request.method === "POST") {
       const source = String(form.get("source"));
       const days = Number(form.get("days"));
       if (!confirmed) {
-        if (!Number.isInteger(days) || days < 1 || days > MAX_BACKFILL_DAYS) throw new Error(`Days must be a whole number from 1 to ${MAX_BACKFILL_DAYS}.`);
+        if (!Number.isInteger(days) || days < 1 || days > MAX_BACKFILL_DAYS) {
+          backfillForm = true;
+          bfSource = source;
+          bfDays = String(form.get("days") ?? "");
+          throw new Error(`Days must be a whole number from 1 to ${MAX_BACKFILL_DAYS}.`);
+        }
         confirm = { kind: "backfill", source, days, estimate: backfillEstimate(source, days) };
       } else {
         const jobs = await startBackfill(env.DB, env.FETCH_QUEUE, source, days);
@@ -81,21 +96,28 @@ const doneMessage =
       : done === "backfill"
       ? `Backfill started (${doneCount} ${doneCount === 1 ? "source" : "sources"}). It runs over the next hours or days, within the AI spend cap.`
       : done === "reclassify"
-        ? `${doneCount.toLocaleString()} posts are waiting for classification. At ~${CLASSIFY_PER_MINUTE} a minute this takes about ${minutes(Math.ceil(doneCount / CLASSIFY_PER_MINUTE))}.`
+        ? `${num(doneCount)} posts are waiting for classification. At ~${CLASSIFY_PER_MINUTE} a minute this takes about ${minutes(Math.ceil(doneCount / CLASSIFY_PER_MINUTE))}.`
         : null;
 
-const [statuses, counts, progress, ops, trending] = await Promise.all([
-  sourceStatuses(env.DB),
-  postCounts(env.DB),
-  classifyProgress(env.DB),
-  operations(env.DB),
-  trendingStatus(env.DB),
-]);
+async function loadMain(db: D1Database) {
+  const [statuses, counts, progress, ops, trending, model, unreviewed] = await Promise.all([
+    sourceStatuses(db),
+    postCounts(db),
+    classifyProgress(db),
+    operations(db),
+    trendingStatus(db),
+    classifierModel(db),
+    reclassifyPreview(db),
+  ]);
+  return { statuses, counts, progress, ops, trending, model, unreviewed };
+}
+// The main page's data, or null on the confirmation and backfill form screens.
+const main = !confirm && !backfillForm ? await loadMain(env.DB) : null;
 // Below one a minute, keep a decimal so a slow rate does not read as "~0".
 const rate = (perMinute: number) => (perMinute < 1 ? perMinute.toFixed(1) : String(Math.round(perMinute)));
-const eta = (remaining: number) => {
-  const minutes = etaMinutesFor(remaining, progress);
-  return minutes === null ? undefined : `${aboutDuration(minutes)} left`;
+const eta = (remaining: number, progress: ClassifyProgress) => {
+  const m = etaMinutesFor(remaining, progress);
+  return m === null ? undefined : `${aboutDuration(m)} left`;
 };
 const countRows = [
   ["pending", "Waiting to classify"],
@@ -107,6 +129,37 @@ const countRows = [
 // Whole dollars print without cents ("$15"), anything else with them ("$0.50").
 const usd = (n: number | null) => (n === null ? "" : Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`);
 const sourceLabel = (s: string) => (s === "all" ? "all sources" : (SOURCE_LABELS[s] ?? s));
+
+// Status marks differ in shape as well as color (handoff: color is never the only signal).
+type Mark = "ok" | "warn" | "error" | "running" | "off";
+const markShape: Record<Mark, string> = {
+  ok: "rounded-full bg-emerald-600",
+  warn: "rotate-45 rounded-[2px] bg-amber-600",
+  error: "bg-red-600",
+  running: "rounded-full border-2 border-lime-600",
+  off: "rounded-full border-2 border-stone-300",
+};
+const markText: Record<Mark, string> = { ok: "OK", warn: "Warning", error: "Error", running: "Running", off: "No runs yet" };
+const runMark = (run: SourceRun | null | undefined, warn = false): Mark =>
+  !run ? "off" : run.error ? "error" : !run.finished_at ? "running" : warn ? "warn" : "ok";
+const cardRing: Record<Mark, string> = { ok: "", warn: "ring-amber-200", error: "ring-red-300", running: "", off: "" };
+/** ["Backfill", "3h ago", "1,245 items", "9s"] (mode only when it isn't the daily cron), shown joined by " · ". */
+const runParts = (run: SourceRun, unit: string): string[] => {
+  const mode = run.mode === "backfill" ? ["Backfill"] : run.mode === "manual" ? ["Manual"] : [];
+  if (!run.finished_at) return [...mode, `started ${timeAgo(run.started_at)}`, "running"];
+  const took = Date.parse(run.finished_at) - Date.parse(run.started_at);
+  return [...mode, timeAgo(run.started_at), `${num(run.items_fetched ?? 0)} ${unit}`, shortDuration(took)];
+};
+const dropText = (s: SourceStatus) => {
+  if (s.latestItems === null || s.weekAverage === null) return "";
+  const below = Math.round((1 - s.latestItems / s.weekAverage) * 100);
+  return `${num(s.latestItems)} items is ${below}% below this source's 7-day average of ${num(Math.round(s.weekAverage))}. Check the adapter or run it again.`;
+};
+const h2 = "font-mono text-xs font-bold tracking-widest text-stone-500 uppercase";
+const warnPanel = "mt-3 flex gap-1.5 rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-800 ring-1 ring-amber-200 ring-inset";
+const errorPanel = "mt-3 flex gap-1.5 rounded-lg bg-red-50 px-3 py-2.5 text-sm break-words text-red-800 ring-1 ring-red-200 ring-inset";
+const jobRow =
+  "flex min-h-16 w-full items-center gap-3 py-3 pr-3 pl-4 text-left hover:bg-stone-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-lime-600";
 ---
 
 <Admin title="Status" section="status">
@@ -118,11 +171,11 @@ const sourceLabel = (s: string) => (s === "all" ? "all sources" : (SOURCE_LABELS
       <section class={`${card} p-4`}>
         {confirm.kind === "backfill" ? (
           <>
-            <h1 class="text-lg font-semibold">
+            <h1 class="text-xl font-bold tracking-tight">
               Backfill {confirm.days} days of {sourceLabel(confirm.source)}?
             </h1>
             <ul class="mt-3 list-disc space-y-1 pl-5 text-sm text-stone-700">
-              <li>About {confirm.estimate.posts.toLocaleString()} posts to classify (rough estimate).</li>
+              <li>About {num(confirm.estimate.posts)} posts to classify (rough estimate).</li>
               <li>
                 About ${confirm.estimate.costUsd.toFixed(2)} of Workers AI{AI_DAILY_CAP_USD ? `, ${confirm.estimate.capDays > 1 ? "more than" : "under"} the ${usd(AI_DAILY_CAP_USD)}/day AI Gateway cap.` : "."}
               </li>
@@ -135,18 +188,18 @@ const sourceLabel = (s: string) => (s === "all" ? "all sources" : (SOURCE_LABELS
           </>
         ) : (
           <>
-            <h1 class="text-lg font-semibold">Re-classify {confirm.posts.toLocaleString()} unreviewed queued posts?</h1>
+            <h1 class="text-xl font-bold tracking-tight">Re-classify {num(confirm.posts)} unreviewed queued posts?</h1>
             <ul class="mt-3 list-disc space-y-1 pl-5 text-sm text-stone-700">
               <li>They go back to "waiting to classify" and are re-run with the current model and prompt, using cached text.</li>
               <li>Tools only they had created are removed; published tools and anything you reviewed are kept.</li>
-              <li>{confirm.kept.toLocaleString()} queued posts you already acted on (for example, moved) stay as they are.</li>
+              <li>{num(confirm.kept)} queued posts you already acted on (for example, moved) stay as they are.</li>
               <li>About ${(confirm.posts * 0.0004).toFixed(2)} and {minutes(Math.ceil(confirm.posts / CLASSIFY_PER_MINUTE))}.</li>
             </ul>
             {confirm.oldDrops > 0 && (
-              <label class="mt-4 flex gap-3 rounded-lg bg-stone-50 p-3 text-sm">
-                <input type="checkbox" name="old_drops" value="yes" form="confirm-form" checked class="mt-0.5 size-5 shrink-0 rounded border-stone-300 text-brand-600" />
+              <label class="mt-4 flex gap-3 rounded-lg bg-stone-50 p-3 text-sm ring-1 ring-stone-200 ring-inset">
+                <input type="checkbox" name="old_drops" value="yes" form="confirm-form" checked class="mt-0.5 size-5 shrink-0 rounded border-stone-300 accent-lime-600" />
                 <span>
-                  Also re-check <strong>{confirm.oldDrops.toLocaleString()}</strong> posts dropped by an older model, in case it missed real tools. Adds about ${(confirm.oldDrops * 0.0004).toFixed(2)} and {minutes(Math.ceil(confirm.oldDrops / CLASSIFY_PER_MINUTE))}.
+                  Also re-check <strong>{num(confirm.oldDrops)}</strong> posts dropped by an older model, in case it missed real tools. Adds about ${(confirm.oldDrops * 0.0004).toFixed(2)} and {minutes(Math.ceil(confirm.oldDrops / CLASSIFY_PER_MINUTE))}.
                 </span>
               </label>
             )}
@@ -165,88 +218,123 @@ const sourceLabel = (s: string) => (s === "all" ? "all sources" : (SOURCE_LABELS
           <button type="submit" class={btnPrimary}>{confirm.kind === "backfill" ? "Start backfill" : "Re-classify"}</button>
         </form>
       </section>
-    ) : (
-      <>
-        <h1 class="sr-only">Status</h1>
-        {(progress.pending > 0 || ops.length > 0) && (
-          <section class="mb-6">
-            <div class="flex items-center justify-between">
-              <h2 class="text-lg font-semibold">In progress</h2>
-              <a href="/admin/status" class={btnSecondary}>
-                <Icon name="arrowPath" class="size-4 text-stone-500" /> Refresh
-              </a>
+    ) : backfillForm ? (
+      <section>
+        <h1 class="text-2xl font-bold tracking-tight">Start a backfill</h1>
+        <p class="mt-1 text-sm text-stone-600">Fetches past posts with the same adapters. You see the cost and time before anything starts.</p>
+        <form method="post" class={`${card} mt-4 space-y-4 p-4`}>
+          <input type="hidden" name="action" value="backfill" />
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label for="bf-source" class={label}>Source</label>
+              <select id="bf-source" name="source" class={`${input} mt-1`}>
+                <option value="all" selected={bfSource === "all"}>All sources</option>
+                {ENABLED_SOURCES.map((s) => <option value={s} selected={bfSource === s}>{SOURCE_LABELS[s] ?? s}</option>)}
+              </select>
             </div>
-            {progress.pending > 0 && (
-              <div class={`${card} mt-2 p-4`}>
-                <p class="font-semibold">Classifying</p>
-                <p class="mt-0.5 text-sm text-stone-600">
-                  {progress.pending.toLocaleString()} waiting
-                  {progress.reliable && ` · ~${rate(progress.perMinute)} a minute`}
-                  {progress.etaMinutes !== null && ` · ${aboutDuration(progress.etaMinutes)} left`}
+            <div>
+              <label for="bf-days" class={label}>Days back</label>
+              <input id="bf-days" name="days" type="number" inputmode="numeric" min="1" max={MAX_BACKFILL_DAYS} value={bfDays} class={`${input} mt-1`} />
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <a href="/admin/status" class={btnSecondary}>Cancel</a>
+            <button type="submit" class={btnPrimary}>Review backfill</button>
+          </div>
+        </form>
+      </section>
+    ) : main && (
+      <div class="space-y-6">
+        <div class="flex items-center justify-between gap-3">
+          <div class="min-w-0">
+            <h1 class="text-2xl font-bold tracking-tight">Status</h1>
+            {main.model.id && (
+              <p class="mt-0.5 font-mono text-xs break-words text-stone-500">
+                {main.model.id}{main.model.effort && ` · ${main.model.effort} effort`}
+              </p>
+            )}
+          </div>
+          <a href="/admin/status" class={`${btnSecondary} shrink-0`}>
+            <Icon name="arrowPath" class="size-4 text-stone-500" /> Refresh
+          </a>
+        </div>
+
+        {(main.progress.pending > 0 || main.ops.length > 0) && (
+          <section aria-labelledby="progress-h" class="space-y-2.5">
+            <h2 id="progress-h" class={h2}>In progress</h2>
+            {main.progress.pending > 0 && (
+              <div class={`${card} p-4`}>
+                <div class="flex items-baseline justify-between gap-3">
+                  <p class="font-semibold">Classifying</p>
+                  {main.progress.etaMinutes !== null && <span class="font-mono text-xs text-stone-500">{aboutDuration(main.progress.etaMinutes)} left</span>}
+                </div>
+                <p class="mt-2 flex items-baseline gap-2">
+                  <span class="font-mono text-3xl font-bold tracking-tight tabular-nums">{num(main.progress.pending)}</span>
+                  <span class="text-sm text-stone-600">{main.progress.pending === 1 ? "post" : "posts"} waiting</span>
                 </p>
-                {progress.stalled && (
-                  <p class="mt-2 flex gap-1.5 rounded-md bg-amber-50 px-2 py-1.5 text-sm text-amber-800">
+                {main.progress.reliable && <p class="mt-1 font-mono text-xs text-stone-500">~{rate(main.progress.perMinute)} a minute</p>}
+                {main.progress.stalled && (
+                  <p class={warnPanel}>
                     <Icon name="exclamation" class="mt-0.5 size-4 shrink-0" /> Nothing classified in 15 minutes. Usually the daily AI spend cap: waiting posts are retried after the 06:00 UTC daily run.
                   </p>
                 )}
               </div>
             )}
-            <ul class="mt-2 space-y-2">
-              {ops.map((op) => (
-                <li class={`${card} p-4`}>
-                  <div class="flex items-start justify-between gap-3">
-                    <p class="font-semibold">
-                      {op.kind === "backfill" ? `Backfill: ${op.days} days of ${sourceLabel(op.source ?? "all")}` : "Re-classify"}
+            {main.ops.map((op) => (
+              <div class={`${card} p-4`}>
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <p class="font-semibold">{op.kind === "backfill" ? `Backfill · ${op.source && op.source !== "all" ? sourceLabel(op.source) : "All sources"}` : "Re-classify"}</p>
+                    <p class="mt-0.5 font-mono text-xs text-stone-500">
+                      {op.kind === "backfill" && op.days !== null && `${op.days} days · `}started {timeAgo(op.started_at)}
                     </p>
-                    {op.finished_at ? (
-                      <span class="inline-flex shrink-0 items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-emerald-600/20 ring-inset">
-                        <Icon name="check" class="size-3.5" /> Done {timeAgo(op.finished_at)}
-                      </span>
-                    ) : (
-                      <span class="shrink-0 text-xs text-stone-500">Started {timeAgo(op.started_at)}</span>
-                    )}
                   </div>
-                  {op.fetch && (
-                    <Progress
-                      label="Fetching"
-                      done={op.fetch.done}
-                      total={op.fetch.total}
-                      detail={
-                        op.fetch.settled && op.fetch.done < op.fetch.total
-                          ? `${op.fetch.total - op.fetch.done} could not be fetched. Start the same backfill again to retry them; posts already stored are skipped.`
-                          : op.fetch.failed > 0
-                            ? `${op.fetch.failed} failed ${op.fetch.failed === 1 ? "attempt" : "attempts"}, retried automatically.`
-                            : undefined
-                      }
-                    />
+                  {op.finished_at && (
+                    <span class="inline-flex shrink-0 items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-emerald-600/20 ring-inset">
+                      <Icon name="check" class="size-3.5" /> Done {timeAgo(op.finished_at)}
+                    </span>
                   )}
+                </div>
+                {op.fetch && (
                   <Progress
-                    label={op.kind === "backfill" ? "Classifying posts found" : "Classifying"}
-                    done={op.classify.done}
-                    total={op.classify.total}
-                    detail={op.finished_at ? undefined : eta(op.classify.total - op.classify.done)}
+                    label="Fetch runs"
+                    done={op.fetch.done}
+                    total={op.fetch.total}
+                    detail={
+                      op.fetch.settled && op.fetch.done < op.fetch.total
+                        ? `${op.fetch.total - op.fetch.done} could not be fetched. Start the same backfill again to retry them; posts already stored are skipped.`
+                        : op.fetch.failed > 0
+                          ? `${op.fetch.failed} failed ${op.fetch.failed === 1 ? "attempt" : "attempts"}, retried automatically.`
+                          : undefined
+                    }
                   />
-                </li>
-              ))}
-            </ul>
+                )}
+                <Progress
+                  label={op.kind === "backfill" ? "Stored posts classified" : "Posts classified"}
+                  done={op.classify.done}
+                  total={op.classify.total}
+                  detail={op.finished_at ? undefined : eta(op.classify.total - op.classify.done, main.progress)}
+                />
+              </div>
+            ))}
           </section>
         )}
 
-        <section>
-          <h2 class="text-lg font-semibold">Posts</h2>
-          <dl class={`${card} mt-2 divide-y divide-stone-100 text-sm`}>
+        <section aria-labelledby="posts-h" class="space-y-2.5">
+          <h2 id="posts-h" class={h2}>Posts</h2>
+          <dl class={`${card} divide-y divide-stone-100 text-sm`}>
             {countRows.map(([status, text]) => (
               <div class="flex justify-between px-4 py-2.5">
                 <dt class="text-stone-600">{text}</dt>
-                <dd class="font-semibold tabular-nums">{(counts[status] ?? 0).toLocaleString()}</dd>
+                <dd class="font-mono font-bold tabular-nums">{num(main.counts[status] ?? 0)}</dd>
               </div>
             ))}
           </dl>
         </section>
 
-        <section class="mt-6">
-          <div class="flex items-center justify-between">
-            <h2 class="text-lg font-semibold">Sources</h2>
+        <section aria-labelledby="sources-h" class="space-y-2.5">
+          <div class="flex items-center justify-between gap-3">
+            <h2 id="sources-h" class={h2}>Sources</h2>
             <form method="post">
               <input type="hidden" name="action" value="run" />
               <input type="hidden" name="source" value="all" />
@@ -255,104 +343,107 @@ const sourceLabel = (s: string) => (s === "all" ? "all sources" : (SOURCE_LABELS
               </button>
             </form>
           </div>
-          <ul class="mt-2 space-y-2">
-            {statuses.map((s) => (
-              <li class={`${card} p-4`}>
-                <div class="flex items-start justify-between gap-3">
-                  <div class="min-w-0">
-                    <p class="font-semibold">{SOURCE_LABELS[s.source] ?? s.source}</p>
-                    {s.last ? (
-                      <p class="mt-0.5 text-sm text-stone-600">
-                        Last {s.last.mode === "backfill" ? "backfill" : "run"} {timeAgo(s.last.started_at)} · {s.last.finished_at ? `${(s.last.items_fetched ?? 0).toLocaleString()} fetched` : "still running"}
-                        {s.weekAverage !== null && ` · 7-day avg ${Math.round(s.weekAverage).toLocaleString()}`}
-                      </p>
-                    ) : (
-                      <p class="mt-0.5 text-sm text-stone-600">No runs yet</p>
-                    )}
+          {main.statuses.map((s) => {
+            const name = SOURCE_LABELS[s.source] ?? s.source;
+            const mark = runMark(s.last, s.dropWarning);
+            return (
+              <div class={`${card} p-4 ${cardRing[mark]}`}>
+                <div class="flex items-center gap-3">
+                  <span class={`size-2.5 shrink-0 ${markShape[mark]}`} aria-hidden="true"></span>
+                  <div class="min-w-0 flex-1">
+                    <p class="font-semibold">
+                      {name} <span class="sr-only">({markText[mark]})</span>
+                    </p>
+                    <p class="mt-0.5 font-mono text-xs text-stone-500">
+                      <Meta parts={[...(s.last ? runParts(s.last, "items") : ["No runs yet"]), ...(s.weekAverage !== null ? [`7-day avg ${num(Math.round(s.weekAverage))}`] : [])]} />
+                    </p>
                   </div>
-                  <form method="post">
+                  <form method="post" class="shrink-0">
                     <input type="hidden" name="action" value="run" />
                     <input type="hidden" name="source" value={s.source} />
-                    <button type="submit" class={btnSecondary} aria-label={`Run ${SOURCE_LABELS[s.source] ?? s.source} now`}>
-                      <Icon name="play" class="size-4 text-stone-500" /> Run
-                    </button>
+                    <button type="submit" class={btnSecondary} aria-label={`Run ${name} now`}>Run now</button>
                   </form>
                 </div>
                 {s.last?.error && (
-                  <p class="mt-2 flex gap-1.5 rounded-md bg-red-50 px-2 py-1.5 text-sm break-words text-red-800">
+                  <p class={errorPanel}>
                     <Icon name="exclamation" class="mt-0.5 size-4 shrink-0" /> {s.last.error}
                   </p>
                 )}
-                {s.dropWarning && (
-                  <p class="mt-2 flex gap-1.5 rounded-md bg-amber-50 px-2 py-1.5 text-sm text-amber-800">
-                    <Icon name="exclamation" class="mt-0.5 size-4 shrink-0" /> Fewer than half the usual items. The source may be broken or rate limited.
-                  </p>
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        <section class="mt-6">
-          <h2 class="text-lg font-semibold">Trending</h2>
-          <div class={`${card} mt-2 p-4`}>
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
-                <p class="font-semibold">Daily update</p>
-                <p class="mt-0.5 text-sm text-stone-600">
-                  {trending
-                    ? `Last run ${timeAgo(trending.started_at)} · ${trending.finished_at ? `${(trending.items_fetched ?? 0).toLocaleString()} tools scored` : "still running"}`
-                    : "No runs yet. Runs daily at 07:00 UTC."}
-                </p>
-                <p class="mt-1 text-xs text-stone-500">Refreshes upvotes and comments, GitHub stars, and every tool's trending score.</p>
+                {s.dropWarning && <p class={warnPanel}>{dropText(s)}</p>}
               </div>
-              <form method="post">
-                <input type="hidden" name="action" value="trending" />
-                <button type="submit" class={btnSecondary} aria-label="Run the trending update now">
-                  <Icon name="play" class="size-4 text-stone-500" /> Run
-                </button>
-              </form>
+            );
+          })}
+          <div class="flex items-center gap-3 rounded-xl bg-stone-100 p-4 ring-1 ring-stone-200">
+            <span class={`size-2.5 shrink-0 ${markShape.off}`} aria-hidden="true"></span>
+            <div class="min-w-0">
+              <p class="font-semibold text-stone-700">Product Hunt</p>
+              <p class="mt-0.5 text-sm text-stone-600">Off until API access is granted</p>
             </div>
-            {trending?.error && (
-              <p class="mt-2 flex gap-1.5 rounded-md bg-amber-50 px-2 py-1.5 text-sm break-words text-amber-800">
-                <Icon name="exclamation" class="mt-0.5 size-4 shrink-0" /> {trending.error}
-              </p>
-            )}
           </div>
         </section>
 
-        <section class="mt-6">
-          <h2 class="text-lg font-semibold">Re-classify the queue</h2>
-          <p class="mt-1 text-sm text-stone-600">After changing the model, prompt or categories: re-run classification on queued posts nobody has reviewed yet.</p>
-          <form method="post" class="mt-2">
-            <input type="hidden" name="action" value="reclassify" />
-            <button type="submit" class={`${btnSecondary} w-full`}>
-              <Icon name="arrowPath" class="size-4 text-stone-500" /> Re-classify unreviewed posts…
-            </button>
-          </form>
+        <section aria-labelledby="trending-h" class="space-y-2.5">
+          <h2 id="trending-h" class={h2}>Trending</h2>
+          {(() => {
+            const { trending } = main;
+            const mark = runMark(trending);
+            return (
+              <div class={`${card} p-4 ${cardRing[mark]}`}>
+                <div class="flex items-center gap-3">
+                  <span class={`size-2.5 shrink-0 ${markShape[mark]}`} aria-hidden="true"></span>
+                  <div class="min-w-0 flex-1">
+                    <p class="font-semibold">
+                      Daily update <span class="sr-only">({markText[mark]})</span>
+                    </p>
+                    <p class="mt-0.5 font-mono text-xs text-stone-500">
+                      <Meta parts={trending ? runParts(trending, "tools scored") : ["No runs yet", "daily at 07:00 UTC"]} />
+                    </p>
+                  </div>
+                  <form method="post" class="shrink-0">
+                    <input type="hidden" name="action" value="trending" />
+                    <button type="submit" class={btnSecondary} aria-label="Run the trending update now">Run now</button>
+                  </form>
+                </div>
+                <p class="mt-2 text-xs text-stone-500">Refreshes upvotes and comments, GitHub stars, and every tool's trending score.</p>
+                {trending?.error && (
+                  <p class={errorPanel}>
+                    <Icon name="exclamation" class="mt-0.5 size-4 shrink-0" /> {trending.error}
+                  </p>
+                )}
+              </div>
+            );
+          })()}
         </section>
 
-        <section class="mt-6">
-          <h2 class="text-lg font-semibold">Backfill</h2>
-          <form method="post" class={`${card} mt-2 space-y-3 p-4`}>
-            <input type="hidden" name="action" value="backfill" />
-            <div class="grid grid-cols-2 gap-3">
-              <div>
-                <label for="bf-source" class={label}>Source</label>
-                <select id="bf-source" name="source" class={`${input} mt-1`}>
-                  <option value="all">All sources</option>
-                  {ENABLED_SOURCES.map((s) => <option value={s}>{SOURCE_LABELS[s] ?? s}</option>)}
-                </select>
-              </div>
-              <div>
-                <label for="bf-days" class={label}>Days back</label>
-                <input id="bf-days" name="days" type="number" inputmode="numeric" min="1" max={MAX_BACKFILL_DAYS} value="90" class={`${input} mt-1`} />
-              </div>
-            </div>
-            <button type="submit" class={`${btnSecondary} w-full`}>Review backfill…</button>
-          </form>
+        <section aria-labelledby="jobs-h" class="space-y-2.5">
+          <h2 id="jobs-h" class={h2}>Jobs</h2>
+          <div class={`${card} divide-y divide-stone-200 overflow-hidden`}>
+            <a
+              href="/admin/status?job=backfill"
+              class={jobRow}
+            >
+              <span class="min-w-0 flex-1">
+                <span class="block font-semibold">Start a backfill</span>
+                <span class="block text-sm text-stone-500">Pick a source and number of days</span>
+              </span>
+              <Icon name="chevronRight" class="size-5 shrink-0 text-stone-400" />
+            </a>
+            <form method="post">
+              <input type="hidden" name="action" value="reclassify" />
+              <button type="submit" class={jobRow}>
+                <span class="min-w-0 flex-1">
+                  <span class="block font-semibold">Re-classify the queue</span>
+                  <span class="block text-sm text-stone-500">
+                    {num(main.unreviewed.posts)} unreviewed {main.unreviewed.posts === 1 ? "post" : "posts"}, from cached text
+                  </span>
+                </span>
+                <Icon name="chevronRight" class="size-5 shrink-0 text-stone-400" />
+              </button>
+            </form>
+          </div>
+          <p class="text-sm text-stone-500">Each job asks you to confirm on the next screen. Re-classify after changing the model, prompt or categories. Migrations, secrets and deploys stay in GitHub Actions.</p>
         </section>
-      </>
+      </div>
     )
   }
 </Admin>

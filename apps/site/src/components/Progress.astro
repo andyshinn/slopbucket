@@ -1,5 +1,7 @@
 ---
-// A labeled progress bar (Tailwind Plus "progress bar" style; no JS).
+// A labeled progress bar: lime fill on a stone track, counts in mono (docs/UI-HANDOFF.md, Status). No JS.
+import { num } from "../lib/ui.ts";
+
 interface Props {
   label: string;
   done: number;
@@ -12,19 +14,19 @@ const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
 
 <div class="mt-3">
   <div class="flex justify-between gap-3 text-sm">
-    <span class="font-medium text-stone-900">{label}</span>
-    <span class="text-stone-600 tabular-nums">{done.toLocaleString()} of {total.toLocaleString()}</span>
+    <span class="text-stone-600">{label}</span>
+    <span class="font-mono text-xs/5 text-stone-900 tabular-nums">{num(done)} / {num(total)}</span>
   </div>
   {/* No total yet (e.g. a backfill that has stored nothing): indeterminate, so no value attributes. */}
   <div
-    class="mt-1.5 h-2 overflow-hidden rounded-full bg-stone-200"
+    class="mt-1.5 h-2 overflow-hidden rounded-full bg-stone-100 ring-1 ring-stone-200 ring-inset"
     role="progressbar"
     aria-label={label}
     aria-valuemin={total > 0 ? 0 : undefined}
     aria-valuemax={total > 0 ? total : undefined}
     aria-valuenow={total > 0 ? Math.min(done, total) : undefined}
   >
-    <div class="h-2 rounded-full bg-brand-600" style={`width: ${pct}%`}></div>
+    <div class="h-2 rounded-full bg-lime-400" style={`width: ${pct}%`}></div>
   </div>
   {detail && <p class="mt-1 text-xs text-stone-500">{detail}</p>}
 </div>
