@@ -184,7 +184,7 @@ The starting values are guesses to tune against the backfilled data. Closed-sour
 2. **GitHub stats:** snapshots stars, forks, language and license into `repo_snapshots` for active tools with a repo. It uses GraphQL in batches of 50, which needs the `GH_API_TOKEN` Worker secret; without it, the job snapshots about 40 repos over REST and the run notes the shortfall.
 3. **Scores:** recomputes `trending_score` and `is_active` for every tool that isn't hidden.
 
-GitHub posts count toward S, but their stars are not counted as upvotes in P; stars enter only through `stars_gained_7d`. Flags can push a lobste.rs score below zero, so a negative `P + 2C` counts as 0. Partial problems, such as a rate limit or a failed lookup, are recorded on the run instead of failing it, so the scores still update; a tool whose score still comes out as not a number is scored 0 and named on the run.
+GitHub posts count toward S, but their stars are not counted as upvotes in P; stars enter only through `stars_gained_7d`. Flags can push a lobste.rs score below zero; such a post adds 0 to P, so it doesn't cancel the tool's other upvotes. Partial problems, such as a rate limit or a failed lookup, are recorded on the run instead of failing it, so the scores still update; a tool whose score still comes out as not a number is scored 0 and named on the run (the first 10, plus a count).
 
 **Backfill gap:** star growth is unknown for the 90 backfilled days, because snapshots only start at launch. Trending relies on posts and engagement until a week of snapshots exists.
 

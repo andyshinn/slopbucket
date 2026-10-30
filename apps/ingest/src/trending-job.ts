@@ -33,8 +33,10 @@ export interface TrendingInput {
 }
 
 /**
- * The formula in docs/DESIGN.md "Trending score and activity". Flags can push a
- * lobste.rs score below zero, so net-negative engagement counts as none.
+ * The formula in docs/DESIGN.md "Trending score and activity". scoreTools already
+ * counts a flagged (negative) lobste.rs score as 0; the clamp here keeps log1p from
+ * going NaN for any other caller. It doesn't cover NaN inputs (Math.max(0, NaN) is
+ * NaN): scoreTools falls back to 0 for those.
  */
 export function trendingScore(t: TrendingInput, w: Weights): number {
   const engagement = w.w_s * t.sources + w.w_e * Math.log1p(Math.max(0, t.points + 2 * t.comments)) + w.w_g * Math.log1p(Math.max(0, t.starsGained7d));
@@ -215,7 +217,7 @@ async function scoreTools(db: D1Database, now: number, warnings: string[]): Prom
        ),
        engagement AS (
          SELECT tool_id, count(DISTINCT source) AS sources,
-           sum(CASE WHEN source != 'github' THEN coalesce(score, 0) ELSE 0 END) AS points,
+           sum(CASE WHEN source != 'github' THEN max(0, coalesce(score, 0)) ELSE 0 END) AS points,
            sum(CASE WHEN source != 'github' THEN coalesce(comments, 0) ELSE 0 END) AS comments
          FROM recent GROUP BY tool_id
        )
@@ -254,6 +256,9 @@ async function scoreTools(db: D1Database, now: number, warnings: string[]): Prom
     return db.prepare("UPDATE tools SET trending_score = ?, is_active = ? WHERE id = ?").bind(score, active, t.id);
   });
   for (let i = 0; i < statements.length; i += 100) await db.batch(statements.slice(i, i + 100));
-  if (unscorable.length) warnings.push(`trending score not a number for tools ${unscorable.join(", ")}; set to 0`);
+  if (unscorable.length) {
+    const more = unscorable.length > 10 ? ` and ${unscorable.length - 10} more` : "";
+    warnings.push(`trending score not a number for tools ${unscorable.slice(0, 10).join(", ")}${more}; set to 0`);
+  }
   return results.length;
 }
