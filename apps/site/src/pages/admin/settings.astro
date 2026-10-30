@@ -1,6 +1,7 @@
 ---
 import { env } from "cloudflare:workers";
 import Notice from "../../components/Notice.astro";
+import ThresholdHistogram from "../../components/ThresholdHistogram.astro";
 import Admin from "../../layouts/Admin.astro";
 import type { TagGroups } from "@slop-bucket/core";
 import {
@@ -12,6 +13,7 @@ import {
   loadSettings,
   saveSetting,
   suggestedTags,
+  thresholdHistogram,
 } from "../../lib/settings-admin.ts";
 import { btnPrimary, card, input, label } from "../../lib/ui.ts";
 
@@ -33,6 +35,8 @@ if (Astro.request.method === "POST") {
 
 const saved = Astro.url.searchParams.get("saved");
 const [values, suggestions] = await Promise.all([loadSettings(env.DB), suggestedTags(env.DB)]);
+const threshold = values.review_threshold as number;
+const histogram = await thresholdHistogram(env.DB, threshold);
 const WEIGHT_LABELS: Record<string, string> = { w_s: "Sources", w_e: "Engagement", w_g: "Star growth", g: "Gravity" };
 
 // Value shown in a field: what was just submitted if it failed, else what is stored.
@@ -118,6 +122,7 @@ function shown(key: string, name = "value"): string {
             </div>
           )}
           <button type="submit" class={`${btnPrimary} mt-3 w-full`}>Save {f.label.toLowerCase()}</button>
+          {f.key === "review_threshold" && <ThresholdHistogram histogram={histogram} threshold={threshold} />}
         </form>
       ))
     }

@@ -108,6 +108,64 @@ export async function suggestedTags(db: D1Database, limit = 20): Promise<{ tag: 
   return results;
 }
 
+export interface ThresholdBucket {
+  /** Lower edge, 0 to 0.9 in steps of 0.1; the top bucket also holds 1.0. */
+  from: number;
+  /** Queued posts with a score in this bucket. */
+  posts: number;
+  /** Of those, posts in "other", which never auto-publish. */
+  other: number;
+  /** Of those, posts that would auto-publish at the current threshold. */
+  publishNow: number;
+  /** Queued posts that would auto-publish at a threshold of `from`. */
+  publishAt: number;
+}
+
+export interface ThresholdHistogram {
+  /** Highest bucket first. */
+  buckets: ThresholdBucket[];
+  /** Queued posts without a score (invalid model output); they always stay in review. */
+  noScore: number;
+  queued: number;
+  /** Queued posts that would auto-publish at the current threshold. */
+  publishAtCurrent: number;
+}
+
+/**
+ * Would a post auto-publish at this threshold? The same rule as the classifier's
+ * routing (apps/ingest/src/classify-job.ts): below a threshold of 1, at or above it, not "other".
+ */
+export function wouldPublish(confidence: number, category: string | null, threshold: number): boolean {
+  return threshold < 1 && confidence >= threshold && category !== "other";
+}
+
+/** Queued posts by stored confidence, in 0.1 buckets, with how many each threshold would publish. */
+export async function thresholdHistogram(db: D1Database, threshold: number): Promise<ThresholdHistogram> {
+  // Grouped by exact score so the comparisons run in JS, exactly as the classifier makes them.
+  const { results } = await db
+    .prepare(
+      `SELECT confidence, json_extract(classification, '$.category') AS category, count(*) AS n
+       FROM posts WHERE status = 'queued' GROUP BY 1, 2`,
+    )
+    .all<{ confidence: number | null; category: string | null; n: number }>();
+  const scored = results.filter((r): r is typeof r & { confidence: number } => r.confidence !== null);
+  const publishable = (t: number) => scored.reduce((sum, r) => sum + (wouldPublish(r.confidence, r.category, t) ? r.n : 0), 0);
+  const buckets = Array.from({ length: 10 }, (_, i) => {
+    const from = (9 - i) / 10;
+    const to = (10 - i) / 10; // the top bucket has no upper edge, so it holds 1.0
+    const inBucket = scored.filter((r) => r.confidence >= from && (i === 0 || r.confidence < to));
+    return {
+      from,
+      posts: inBucket.reduce((sum, r) => sum + r.n, 0),
+      other: inBucket.reduce((sum, r) => sum + (r.category === "other" ? r.n : 0), 0),
+      publishNow: inBucket.reduce((sum, r) => sum + (wouldPublish(r.confidence, r.category, threshold) ? r.n : 0), 0),
+      publishAt: publishable(from),
+    };
+  });
+  const noScore = results.reduce((sum, r) => sum + (r.confidence === null ? r.n : 0), 0);
+  return { buckets, noScore, queued: results.reduce((sum, r) => sum + r.n, 0), publishAtCurrent: publishable(threshold) };
+}
+
 /** Validates with the same schema the Worker uses, then saves. */
 export async function saveSetting(db: D1Database, key: string, form: FormData): Promise<void> {
   const field = SETTING_FIELDS.find((f) => f.key === key);
