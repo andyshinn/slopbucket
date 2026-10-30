@@ -2,7 +2,7 @@
 
 Where Slop Bucket stands, so a new session can pick up without the chat history. Update this file in each PR that moves the launch plan, changes what's next, or resolves an open issue.
 
-**Last updated:** 2026-10-30 (desktop admin shell and queue split view; fix: daily update failed on a negative lobste.rs score)
+**Last updated:** 2026-10-30 (star floor applies to repos from every source)
 
 ## Resuming in a new session
 
@@ -39,6 +39,8 @@ Built outside the plan's step list, all needed before launch: the daily trending
 
 ## Open issues
 
+- **About 900 published tools are Show HN repos under 10 stars** (fixed for new posts in this PR): `github_min_stars` only filtered the GitHub search, so HN and lobste.rs posts linking tiny repos auto-published. New posts like that now go to review. After the deploy, press Status → Jobs → Send low-star tools to review (or `ops.yml` → `queue-low-stars`) once to move the existing ones back to the queue.
+
 - **Daily update failed with `NOT NULL constraint failed: tools.trending_score`** (fixed in this PR): a flagged lobste.rs story with a negative score made `ln(1 + P + 2C)` NaN, D1 bound it as NULL, and the whole batch failed, so no tool was scored. After the deploy, press Run on Status → Daily update and check it scores tools.
 - **Trending cron didn't run on Oct 9.** `source_runs` has only the manual trending run from Oct 8 20:49 UTC, and nothing from the 07:00 UTC cron on Oct 9, although the 06:00 fetch ran. Check tomorrow's 07:00 run on `sb-ingest`; if it's missing again, check the deployed cron triggers and the ingest logs.
 - **Rename cleanup failed.** The `rename.yml` "cleanup" run on Oct 9 23:55 failed with R2 429 (rate limited) while deleting `radar-articles` objects. Re-run cleanup; already-deleted objects return 404, which the script ignores. Afterwards, delete `rename.yml` and `.github/scripts/copy-data.mjs`.
@@ -63,6 +65,7 @@ Built outside the plan's step list, all needed before launch: the daily trending
 - **Phone-only owner.** Every operation is an admin action or a `workflow_dispatch` workflow. Confirm before running anything that spends money or deletes data.
 - **Classifier:** GLM 5.3 Flash replaced Llama 3.3 (39% → about 80% precision). Every MCP server is in scope (`mcp-dev` / `mcp-general`), but a product that merely offers MCP is judged by its main purpose.
 - **Threshold changes don't re-classify.** Status → Publish confident posts (or `ops.yml` → `publish-confident`) applies a lowered `review_threshold` to the queue from stored confidence, with the classify job's rule (`autoPublishes` in `packages/core/src/ops.ts`). Only model, reasoning, category, tag or few-shot changes need a re-classify.
+- **Star floor:** `github_min_stars` filters the GitHub search, and also keeps any post whose tool has a repo under it from auto-publishing, whatever the source (live GitHub check in the classify job, saved as that day's repo snapshot; latest snapshot in Publish confident posts). A GitHub rate limit or error retries the classify job rather than queueing the post. Approving in review overrides it.
 - **Duplicate-URL reuse** needs the same classifier fingerprint (model, reasoning, prompt, categories, tags). Re-classify jobs are `force: true`.
 - **Trending:** GitHub posts count as a source, but their stars aren't counted as upvotes; stars enter only as 7-day growth. Queued tools are scored too.
 - **Tags:** Option C (four groups, Interface overlaps categories on purpose). Languages come from GitHub stats, not tags.

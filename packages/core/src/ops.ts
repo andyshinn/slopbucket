@@ -91,13 +91,23 @@ export function autoPublishes(threshold: number, confidence: number, category: s
 const setting = (key: string) => `(SELECT json_extract(value, '$') FROM settings WHERE key = '${key}')`;
 
 /**
+ * A tool (`alias` names its row) whose GitHub repo is under `github_min_stars`, by its
+ * latest repo snapshot; a repo with no snapshot yet counts as under. Its posts never
+ * publish without review, whichever source found them.
+ */
+const lowStarTool = (alias: string) => `${alias}.github_repo IS NOT NULL
+    AND coalesce((SELECT ls.stars FROM repo_snapshots ls WHERE ls.tool_id = ${alias}.id ORDER BY ls.date DESC LIMIT 1), 0) < ${setting("github_min_stars")}`;
+
+/**
  * Unreviewed queued posts that publish-confident may publish at some threshold, judged
  * from their stored classification. A category no longer in the list (it was removed
- * after the post was classified) waits for review or a re-classify instead. Also used
- * by the threshold histogram on Settings.
+ * after the post was classified) waits for review or a re-classify instead, and so does
+ * a post whose tool's repo is under the star floor. Also used by the threshold histogram
+ * on Settings.
  */
 export const PUBLISHABLE_QUEUED_SQL = `${UNREVIEWED_QUEUED} AND tool_id IS NOT NULL AND confidence IS NOT NULL
-    AND json_extract(classification, '$.category') IN (SELECT value FROM json_each((SELECT value FROM settings WHERE key = 'categories')))`;
+    AND json_extract(classification, '$.category') IN (SELECT value FROM json_each((SELECT value FROM settings WHERE key = 'categories')))
+    AND posts.tool_id NOT IN (SELECT lt.id FROM tools lt WHERE ${lowStarTool("lt")})`;
 
 /** Of those, the posts autoPublishes() would publish under today's settings. */
 const CONFIDENT_QUEUED = `${PUBLISHABLE_QUEUED_SQL}
@@ -139,4 +149,57 @@ export async function publishConfidentPreview(db: D1Database): Promise<PublishCo
 export async function publishConfidentQueued(db: D1Database): Promise<{ posts: number; tools: number }> {
   const [tools, posts] = await db.batch(PUBLISH_CONFIDENT_SQL.map((sql) => db.prepare(sql)));
   return { posts: posts?.meta.changes ?? 0, tools: tools?.meta.changes ?? 0 };
+}
+
+/**
+ * Published tools whose repo is under the star floor and that nobody approved: none of
+ * their published posts has a review decision. Tools you approved stay public.
+ */
+const UNAPPROVED_LOW_STAR_TOOL = `status = 'published' AND ${lowStarTool("tools")}
+    AND EXISTS (SELECT 1 FROM posts p WHERE p.tool_id = tools.id AND p.status = 'published')
+    AND NOT EXISTS (SELECT 1 FROM posts p JOIN review_decisions d ON d.post_id = p.id WHERE p.tool_id = tools.id AND p.status = 'published')`;
+
+/** Published, unreviewed posts of the tools `toolsWhere` (on `t`) picks, all with a repo under the floor. */
+const unreviewedPostsOf = (toolsWhere: string) => `status = 'published' AND id NOT IN (SELECT post_id FROM review_decisions)
+    AND tool_id IN (SELECT t.id FROM tools t WHERE ${lowStarTool("t")} AND (${toolsWhere}))`;
+
+/**
+ * One-off after the star floor started applying to every source: tools that were
+ * auto-published with a repo under `github_min_stars` go back to the review queue,
+ * with their published posts. Tools first; then the unreviewed published posts of every
+ * queued low-star tool (any already queued tool's stray published posts too, which the
+ * preview counts). Used by the admin status panel and ops.yml.
+ */
+export const QUEUE_LOW_STAR_SQL = [
+  `UPDATE tools SET status = 'queued' WHERE ${UNAPPROVED_LOW_STAR_TOOL}`,
+  `UPDATE posts SET status = 'queued' WHERE ${unreviewedPostsOf("t.status = 'queued'")}`,
+];
+
+/**
+ * The floor, and how many tools and posts QUEUE_LOW_STAR_SQL would move (for the
+ * confirmation screen). Posts are counted as the second statement will see them: on
+ * tools already queued, or about to be.
+ */
+export const QUEUE_LOW_STAR_PREVIEW_SQL = `SELECT
+  ${setting("github_min_stars")} AS minStars,
+  (SELECT count(*) FROM tools WHERE ${UNAPPROVED_LOW_STAR_TOOL}) AS tools,
+  (SELECT count(*) FROM posts WHERE ${unreviewedPostsOf(`t.status = 'queued' OR t.id IN (SELECT id FROM tools WHERE ${UNAPPROVED_LOW_STAR_TOOL})`)}) AS posts`;
+
+export interface QueueLowStarPreview {
+  minStars: number;
+  /** Published, unapproved tools with a repo under the floor. */
+  tools: number;
+  /** Their published posts, which go back to the queue. */
+  posts: number;
+}
+
+export async function queueLowStarPreview(db: D1Database): Promise<QueueLowStarPreview> {
+  const r = await db.prepare(QUEUE_LOW_STAR_PREVIEW_SQL).first<QueueLowStarPreview>();
+  return { minStars: r?.minStars ?? 0, tools: r?.tools ?? 0, posts: r?.posts ?? 0 };
+}
+
+/** Runs QUEUE_LOW_STAR_SQL as one transaction; returns how many tools and posts went back to the queue. */
+export async function queueLowStarTools(db: D1Database): Promise<{ tools: number; posts: number }> {
+  const [tools, posts] = await db.batch(QUEUE_LOW_STAR_SQL.map((sql) => db.prepare(sql)));
+  return { tools: tools?.meta.changes ?? 0, posts: posts?.meta.changes ?? 0 };
 }

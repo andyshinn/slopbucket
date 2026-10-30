@@ -73,5 +73,8 @@ export async function resetDb(): Promise<void> {
       env.DB.prepare(`DELETE FROM ${t}`),
     ),
   );
-  await env.DB.prepare("UPDATE settings SET value = '1' WHERE key = 'review_threshold'").run();
+  await env.DB.batch([
+    env.DB.prepare("UPDATE settings SET value = '1' WHERE key = 'review_threshold'"),
+    env.DB.prepare("UPDATE settings SET value = '10' WHERE key = 'github_min_stars'"),
+  ]);
 }
