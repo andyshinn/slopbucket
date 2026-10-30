@@ -173,7 +173,7 @@ describe("classifierModel", () => {
     saved = (await db.prepare("SELECT key, value FROM settings WHERE key IN ('model_id', 'model_reasoning_effort')").all<{ key: string; value: string }>()).results;
   });
   afterEach(async () => {
-    await db.batch(saved.map((r) => db.prepare("UPDATE settings SET value = ? WHERE key = ?").bind(r.value, r.key)));
+    await db.batch(saved.map((r) => db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").bind(r.key, r.value)));
   });
 
   it("reads the model ID and reasoning effort from settings", async () => {
@@ -184,6 +184,12 @@ describe("classifierModel", () => {
   it("treats an empty effort as none", async () => {
     await set("model_reasoning_effort", "").run();
     expect((await classifierModel(db)).effort).toBeNull();
+  });
+
+  // Values can't be malformed JSON (settings has a json_valid CHECK), only missing or the wrong type.
+  it("shows nothing for an unset or non-string value", async () => {
+    await db.batch([db.prepare("DELETE FROM settings WHERE key = 'model_reasoning_effort'"), set("model_id", 42)]);
+    expect(await classifierModel(db)).toEqual({ id: null, effort: null });
   });
 });
 

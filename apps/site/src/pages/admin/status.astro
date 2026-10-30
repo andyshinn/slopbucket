@@ -11,6 +11,7 @@ import {
   CLASSIFY_PER_MINUTE,
   MAX_BACKFILL_DAYS,
   type ReclassifyPreview,
+  type ClassifyProgress,
   type SourceRun,
   type SourceStatus,
   backfillEstimate,
@@ -27,7 +28,7 @@ import {
   startBackfill,
   trendingStatus,
 } from "../../lib/ops.ts";
-import { SOURCE_LABELS, aboutDuration, btnPrimary, btnSecondary, card, input, label, shortDuration, timeAgo } from "../../lib/ui.ts";
+import { SOURCE_LABELS, aboutDuration, btnPrimary, btnSecondary, card, input, label, num, shortDuration, timeAgo } from "../../lib/ui.ts";
 
 type Confirm =
   | { kind: "backfill"; source: string; days: number; estimate: ReturnType<typeof backfillEstimate> }
@@ -37,6 +38,9 @@ let error: string | null = null;
 let confirm: Confirm | null = null;
 // The backfill form is its own screen (Jobs → Start a backfill); it comes back with the error if the days are invalid.
 let backfillForm = Astro.url.searchParams.get("job") === "backfill";
+// What the form shows: the design's 90-day window at first, the submitted values after an error.
+let bfSource = "all";
+let bfDays = "90";
 
 if (Astro.request.method === "POST") {
   const form = await Astro.request.formData();
@@ -57,6 +61,8 @@ if (Astro.request.method === "POST") {
       if (!confirmed) {
         if (!Number.isInteger(days) || days < 1 || days > MAX_BACKFILL_DAYS) {
           backfillForm = true;
+          bfSource = source;
+          bfDays = String(form.get("days") ?? "");
           throw new Error(`Days must be a whole number from 1 to ${MAX_BACKFILL_DAYS}.`);
         }
         confirm = { kind: "backfill", source, days, estimate: backfillEstimate(source, days) };
@@ -90,25 +96,27 @@ const doneMessage =
       : done === "backfill"
       ? `Backfill started (${doneCount} ${doneCount === 1 ? "source" : "sources"}). It runs over the next hours or days, within the AI spend cap.`
       : done === "reclassify"
-        ? `${doneCount.toLocaleString("en")} posts are waiting for classification. At ~${CLASSIFY_PER_MINUTE} a minute this takes about ${minutes(Math.ceil(doneCount / CLASSIFY_PER_MINUTE))}.`
+        ? `${num(doneCount)} posts are waiting for classification. At ~${CLASSIFY_PER_MINUTE} a minute this takes about ${minutes(Math.ceil(doneCount / CLASSIFY_PER_MINUTE))}.`
         : null;
 
-const showMain = !confirm && !backfillForm;
-const [statuses, counts, progress, ops, trending, model, unreviewed] = showMain
-  ? await Promise.all([
-      sourceStatuses(env.DB),
-      postCounts(env.DB),
-      classifyProgress(env.DB),
-      operations(env.DB),
-      trendingStatus(env.DB),
-      classifierModel(env.DB),
-      reclassifyPreview(env.DB),
-    ])
-  : [];
+async function loadMain(db: D1Database) {
+  const [statuses, counts, progress, ops, trending, model, unreviewed] = await Promise.all([
+    sourceStatuses(db),
+    postCounts(db),
+    classifyProgress(db),
+    operations(db),
+    trendingStatus(db),
+    classifierModel(db),
+    reclassifyPreview(db),
+  ]);
+  return { statuses, counts, progress, ops, trending, model, unreviewed };
+}
+// The main page's data, or null on the confirmation and backfill form screens.
+const main = !confirm && !backfillForm ? await loadMain(env.DB) : null;
 // Below one a minute, keep a decimal so a slow rate does not read as "~0".
 const rate = (perMinute: number) => (perMinute < 1 ? perMinute.toFixed(1) : String(Math.round(perMinute)));
-const eta = (remaining: number) => {
-  const m = progress ? etaMinutesFor(remaining, progress) : null;
+const eta = (remaining: number, progress: ClassifyProgress) => {
+  const m = etaMinutesFor(remaining, progress);
   return m === null ? undefined : `${aboutDuration(m)} left`;
 };
 const countRows = [
@@ -121,7 +129,6 @@ const countRows = [
 // Whole dollars print without cents ("$15"), anything else with them ("$0.50").
 const usd = (n: number | null) => (n === null ? "" : Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`);
 const sourceLabel = (s: string) => (s === "all" ? "all sources" : (SOURCE_LABELS[s] ?? s));
-const num = (n: number) => n.toLocaleString("en");
 
 // Status marks differ in shape as well as color (handoff: color is never the only signal).
 type Mark = "ok" | "warn" | "error" | "running" | "off";
@@ -151,6 +158,8 @@ const dropText = (s: SourceStatus) => {
 const h2 = "font-mono text-xs font-bold tracking-widest text-stone-500 uppercase";
 const warnPanel = "mt-3 flex gap-1.5 rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-800 ring-1 ring-amber-200 ring-inset";
 const errorPanel = "mt-3 flex gap-1.5 rounded-lg bg-red-50 px-3 py-2.5 text-sm break-words text-red-800 ring-1 ring-red-200 ring-inset";
+const jobRow =
+  "flex min-h-16 w-full items-center gap-3 py-3 pr-3 pl-4 text-left hover:bg-stone-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-lime-600";
 ---
 
 <Admin title="Status" section="status">
@@ -219,13 +228,13 @@ const errorPanel = "mt-3 flex gap-1.5 rounded-lg bg-red-50 px-3 py-2.5 text-sm b
             <div>
               <label for="bf-source" class={label}>Source</label>
               <select id="bf-source" name="source" class={`${input} mt-1`}>
-                <option value="all">All sources</option>
-                {ENABLED_SOURCES.map((s) => <option value={s}>{SOURCE_LABELS[s] ?? s}</option>)}
+                <option value="all" selected={bfSource === "all"}>All sources</option>
+                {ENABLED_SOURCES.map((s) => <option value={s} selected={bfSource === s}>{SOURCE_LABELS[s] ?? s}</option>)}
               </select>
             </div>
             <div>
               <label for="bf-days" class={label}>Days back</label>
-              <input id="bf-days" name="days" type="number" inputmode="numeric" min="1" max={MAX_BACKFILL_DAYS} value="90" class={`${input} mt-1`} />
+              <input id="bf-days" name="days" type="number" inputmode="numeric" min="1" max={MAX_BACKFILL_DAYS} value={bfDays} class={`${input} mt-1`} />
             </div>
           </div>
           <div class="grid grid-cols-2 gap-3">
@@ -234,14 +243,14 @@ const errorPanel = "mt-3 flex gap-1.5 rounded-lg bg-red-50 px-3 py-2.5 text-sm b
           </div>
         </form>
       </section>
-    ) : (
+    ) : main && (
       <div class="space-y-6">
         <div class="flex items-center justify-between gap-3">
           <div class="min-w-0">
             <h1 class="text-2xl font-bold tracking-tight">Status</h1>
-            {model?.id && (
+            {main.model.id && (
               <p class="mt-0.5 font-mono text-xs break-words text-stone-500">
-                {model.id}{model.effort && ` · ${model.effort} effort`}
+                {main.model.id}{main.model.effort && ` · ${main.model.effort} effort`}
               </p>
             )}
           </div>
@@ -250,28 +259,28 @@ const errorPanel = "mt-3 flex gap-1.5 rounded-lg bg-red-50 px-3 py-2.5 text-sm b
           </a>
         </div>
 
-        {progress && ops && (progress.pending > 0 || ops.length > 0) && (
+        {(main.progress.pending > 0 || main.ops.length > 0) && (
           <section aria-labelledby="progress-h" class="space-y-2.5">
             <h2 id="progress-h" class={h2}>In progress</h2>
-            {progress.pending > 0 && (
+            {main.progress.pending > 0 && (
               <div class={`${card} p-4`}>
                 <div class="flex items-baseline justify-between gap-3">
                   <p class="font-semibold">Classifying</p>
-                  {progress.etaMinutes !== null && <span class="font-mono text-xs text-stone-500">{aboutDuration(progress.etaMinutes)} left</span>}
+                  {main.progress.etaMinutes !== null && <span class="font-mono text-xs text-stone-500">{aboutDuration(main.progress.etaMinutes)} left</span>}
                 </div>
                 <p class="mt-2 flex items-baseline gap-2">
-                  <span class="font-mono text-3xl font-bold tracking-tight tabular-nums">{num(progress.pending)}</span>
-                  <span class="text-sm text-stone-600">{progress.pending === 1 ? "post" : "posts"} waiting</span>
+                  <span class="font-mono text-3xl font-bold tracking-tight tabular-nums">{num(main.progress.pending)}</span>
+                  <span class="text-sm text-stone-600">{main.progress.pending === 1 ? "post" : "posts"} waiting</span>
                 </p>
-                {progress.reliable && <p class="mt-1 font-mono text-xs text-stone-500">~{rate(progress.perMinute)} a minute</p>}
-                {progress.stalled && (
+                {main.progress.reliable && <p class="mt-1 font-mono text-xs text-stone-500">~{rate(main.progress.perMinute)} a minute</p>}
+                {main.progress.stalled && (
                   <p class={warnPanel}>
                     <Icon name="exclamation" class="mt-0.5 size-4 shrink-0" /> Nothing classified in 15 minutes. Usually the daily AI spend cap: waiting posts are retried after the 06:00 UTC daily run.
                   </p>
                 )}
               </div>
             )}
-            {ops.map((op) => (
+            {main.ops.map((op) => (
               <div class={`${card} p-4`}>
                 <div class="flex items-start justify-between gap-3">
                   <div class="min-w-0">
@@ -304,82 +313,79 @@ const errorPanel = "mt-3 flex gap-1.5 rounded-lg bg-red-50 px-3 py-2.5 text-sm b
                   label={op.kind === "backfill" ? "Stored posts classified" : "Posts classified"}
                   done={op.classify.done}
                   total={op.classify.total}
-                  detail={op.finished_at ? undefined : eta(op.classify.total - op.classify.done)}
+                  detail={op.finished_at ? undefined : eta(op.classify.total - op.classify.done, main.progress)}
                 />
               </div>
             ))}
           </section>
         )}
 
-        {counts && (
-          <section aria-labelledby="posts-h" class="space-y-2.5">
-            <h2 id="posts-h" class={h2}>Posts</h2>
-            <dl class={`${card} divide-y divide-stone-100 text-sm`}>
-              {countRows.map(([status, text]) => (
-                <div class="flex justify-between px-4 py-2.5">
-                  <dt class="text-stone-600">{text}</dt>
-                  <dd class="font-mono font-bold tabular-nums">{num(counts[status] ?? 0)}</dd>
-                </div>
-              ))}
-            </dl>
-          </section>
-        )}
-
-        {statuses && (
-          <section aria-labelledby="sources-h" class="space-y-2.5">
-            <div class="flex items-center justify-between gap-3">
-              <h2 id="sources-h" class={h2}>Sources</h2>
-              <form method="post">
-                <input type="hidden" name="action" value="run" />
-                <input type="hidden" name="source" value="all" />
-                <button type="submit" class={btnSecondary}>
-                  <Icon name="play" class="size-4 text-stone-500" /> Run all now
-                </button>
-              </form>
-            </div>
-            {statuses.map((s) => {
-              const name = SOURCE_LABELS[s.source] ?? s.source;
-              const mark = runMark(s.last, s.dropWarning);
-              return (
-                <div class={`${card} p-4 ${cardRing[mark]}`}>
-                  <div class="flex items-center gap-3">
-                    <span class={`size-2.5 shrink-0 ${markShape[mark]}`} aria-hidden="true"></span>
-                    <div class="min-w-0 flex-1">
-                      <p class="font-semibold">
-                        {name} <span class="sr-only">({markText[mark]})</span>
-                      </p>
-                      <p class="mt-0.5 font-mono text-xs text-stone-500">
-                        <Meta parts={[...(s.last ? runParts(s.last, "items") : ["No runs yet"]), ...(s.weekAverage !== null ? [`7-day avg ${num(Math.round(s.weekAverage))}`] : [])]} />
-                      </p>
-                    </div>
-                    <form method="post" class="shrink-0">
-                      <input type="hidden" name="action" value="run" />
-                      <input type="hidden" name="source" value={s.source} />
-                      <button type="submit" class={btnSecondary} aria-label={`Run ${name} now`}>Run now</button>
-                    </form>
-                  </div>
-                  {s.last?.error && (
-                    <p class={errorPanel}>
-                      <Icon name="exclamation" class="mt-0.5 size-4 shrink-0" /> {s.last.error}
-                    </p>
-                  )}
-                  {s.dropWarning && <p class={warnPanel}>{dropText(s)}</p>}
-                </div>
-              );
-            })}
-            <div class="flex items-center gap-3 rounded-xl bg-stone-100 p-4 ring-1 ring-stone-200">
-              <span class={`size-2.5 shrink-0 ${markShape.off}`} aria-hidden="true"></span>
-              <div class="min-w-0">
-                <p class="font-semibold text-stone-700">Product Hunt</p>
-                <p class="mt-0.5 text-sm text-stone-600">Off until API access is granted</p>
+        <section aria-labelledby="posts-h" class="space-y-2.5">
+          <h2 id="posts-h" class={h2}>Posts</h2>
+          <dl class={`${card} divide-y divide-stone-100 text-sm`}>
+            {countRows.map(([status, text]) => (
+              <div class="flex justify-between px-4 py-2.5">
+                <dt class="text-stone-600">{text}</dt>
+                <dd class="font-mono font-bold tabular-nums">{num(main.counts[status] ?? 0)}</dd>
               </div>
+            ))}
+          </dl>
+        </section>
+
+        <section aria-labelledby="sources-h" class="space-y-2.5">
+          <div class="flex items-center justify-between gap-3">
+            <h2 id="sources-h" class={h2}>Sources</h2>
+            <form method="post">
+              <input type="hidden" name="action" value="run" />
+              <input type="hidden" name="source" value="all" />
+              <button type="submit" class={btnSecondary}>
+                <Icon name="play" class="size-4 text-stone-500" /> Run all now
+              </button>
+            </form>
+          </div>
+          {main.statuses.map((s) => {
+            const name = SOURCE_LABELS[s.source] ?? s.source;
+            const mark = runMark(s.last, s.dropWarning);
+            return (
+              <div class={`${card} p-4 ${cardRing[mark]}`}>
+                <div class="flex items-center gap-3">
+                  <span class={`size-2.5 shrink-0 ${markShape[mark]}`} aria-hidden="true"></span>
+                  <div class="min-w-0 flex-1">
+                    <p class="font-semibold">
+                      {name} <span class="sr-only">({markText[mark]})</span>
+                    </p>
+                    <p class="mt-0.5 font-mono text-xs text-stone-500">
+                      <Meta parts={[...(s.last ? runParts(s.last, "items") : ["No runs yet"]), ...(s.weekAverage !== null ? [`7-day avg ${num(Math.round(s.weekAverage))}`] : [])]} />
+                    </p>
+                  </div>
+                  <form method="post" class="shrink-0">
+                    <input type="hidden" name="action" value="run" />
+                    <input type="hidden" name="source" value={s.source} />
+                    <button type="submit" class={btnSecondary} aria-label={`Run ${name} now`}>Run now</button>
+                  </form>
+                </div>
+                {s.last?.error && (
+                  <p class={errorPanel}>
+                    <Icon name="exclamation" class="mt-0.5 size-4 shrink-0" /> {s.last.error}
+                  </p>
+                )}
+                {s.dropWarning && <p class={warnPanel}>{dropText(s)}</p>}
+              </div>
+            );
+          })}
+          <div class="flex items-center gap-3 rounded-xl bg-stone-100 p-4 ring-1 ring-stone-200">
+            <span class={`size-2.5 shrink-0 ${markShape.off}`} aria-hidden="true"></span>
+            <div class="min-w-0">
+              <p class="font-semibold text-stone-700">Product Hunt</p>
+              <p class="mt-0.5 text-sm text-stone-600">Off until API access is granted</p>
             </div>
-          </section>
-        )}
+          </div>
+        </section>
 
         <section aria-labelledby="trending-h" class="space-y-2.5">
           <h2 id="trending-h" class={h2}>Trending</h2>
           {(() => {
+            const { trending } = main;
             const mark = runMark(trending);
             return (
               <div class={`${card} p-4 ${cardRing[mark]}`}>
@@ -400,7 +406,7 @@ const errorPanel = "mt-3 flex gap-1.5 rounded-lg bg-red-50 px-3 py-2.5 text-sm b
                 </div>
                 <p class="mt-2 text-xs text-stone-500">Refreshes upvotes and comments, GitHub stars, and every tool's trending score.</p>
                 {trending?.error && (
-                  <p class={warnPanel}>
+                  <p class={errorPanel}>
                     <Icon name="exclamation" class="mt-0.5 size-4 shrink-0" /> {trending.error}
                   </p>
                 )}
@@ -414,7 +420,7 @@ const errorPanel = "mt-3 flex gap-1.5 rounded-lg bg-red-50 px-3 py-2.5 text-sm b
           <div class={`${card} divide-y divide-stone-200 overflow-hidden`}>
             <a
               href="/admin/status?job=backfill"
-              class="flex min-h-16 items-center gap-3 py-3 pr-3 pl-4 hover:bg-stone-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-lime-600"
+              class={jobRow}
             >
               <span class="min-w-0 flex-1">
                 <span class="block font-semibold">Start a backfill</span>
@@ -424,14 +430,11 @@ const errorPanel = "mt-3 flex gap-1.5 rounded-lg bg-red-50 px-3 py-2.5 text-sm b
             </a>
             <form method="post">
               <input type="hidden" name="action" value="reclassify" />
-              <button
-                type="submit"
-                class="flex min-h-16 w-full items-center gap-3 py-3 pr-3 pl-4 text-left hover:bg-stone-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-lime-600"
-              >
+              <button type="submit" class={jobRow}>
                 <span class="min-w-0 flex-1">
                   <span class="block font-semibold">Re-classify the queue</span>
                   <span class="block text-sm text-stone-500">
-                    {unreviewed ? `${num(unreviewed.posts)} unreviewed ${unreviewed.posts === 1 ? "post" : "posts"}, from cached text` : "Unreviewed queued posts, from cached text"}
+                    {num(main.unreviewed.posts)} unreviewed {main.unreviewed.posts === 1 ? "post" : "posts"}, from cached text
                   </span>
                 </span>
                 <Icon name="chevronRight" class="size-5 shrink-0 text-stone-400" />

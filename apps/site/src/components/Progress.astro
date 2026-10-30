@@ -1,5 +1,7 @@
 ---
 // A labeled progress bar: lime fill on a stone track, counts in mono (docs/UI-HANDOFF.md, Status). No JS.
+import { num } from "../lib/ui.ts";
+
 interface Props {
   label: string;
   done: number;
@@ -13,7 +15,7 @@ const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
 <div class="mt-3">
   <div class="flex justify-between gap-3 text-sm">
     <span class="text-stone-600">{label}</span>
-    <span class="font-mono text-xs/5 text-stone-900 tabular-nums">{done.toLocaleString("en")} / {total.toLocaleString("en")}</span>
+    <span class="font-mono text-xs/5 text-stone-900 tabular-nums">{num(done)} / {num(total)}</span>
   </div>
   {/* No total yet (e.g. a backfill that has stored nothing): indeterminate, so no value attributes. */}
   <div

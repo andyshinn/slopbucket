@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aboutDuration, githubHref, safeHref, shortDuration } from "../src/lib/ui.ts";
+import { aboutDuration, githubHref, num, safeHref, shortDuration } from "../src/lib/ui.ts";
 import { buildInfo } from "../src/lib/version.ts";
 
 describe("link helpers", () => {
@@ -24,6 +24,13 @@ describe("aboutDuration", () => {
     expect(aboutDuration(45)).toBe("about 45 minutes");
     expect(aboutDuration(150)).toBe("about 3 hours");
     expect(aboutDuration(5 * 1440)).toBe("about 5 days");
+  });
+});
+
+describe("num", () => {
+  it("adds thousands separators", () => {
+    expect(num(7)).toBe("7");
+    expect(num(28_431)).toBe("28,431");
   });
 });
 

@@ -38,6 +38,9 @@ export function aboutDuration(minutes: number): string {
   return plural(Math.round(minutes / 1440), "day");
 }
 
+/** A count with thousands separators: "1,245". */
+export const num = (n: number) => n.toLocaleString("en");
+
 /** A run's length: "9s", "1m 30s", "2h 5m". */
 export function shortDuration(ms: number): string {
   const s = Math.max(0, Math.round(ms / 1000));
