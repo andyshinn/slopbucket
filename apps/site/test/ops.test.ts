@@ -213,18 +213,21 @@ describe("github_min_stars outside the GitHub search", () => {
   it("Send low-star tools to review moves unapproved low-star tools and their published posts back to the queue", async () => {
     await seed("published");
     await db.batch([
-      db.prepare("INSERT INTO tools (id, slug, name, status, github_repo) VALUES (5, 'e', 'E', 'published', 'o/e'), (6, 'f', 'F', 'hidden', 'o/f')"),
+      db.prepare(
+        "INSERT INTO tools (id, slug, name, status, github_repo) VALUES (5, 'e', 'E', 'published', 'o/e'), (6, 'f', 'F', 'hidden', 'o/f'), (7, 'g', 'G', 'queued', 'o/g')",
+      ),
       db.prepare(`INSERT INTO posts (id, source, external_id, url, canonical_url, title, posted_at, status, tool_id, confidence, classification) VALUES
         ${post(10, 1, "published")}, ${post(11, 1, "published")}, ${post(12, 1, "rejected")}, ${post(20, 2, "published")}, ${post(30, 3, "published")},
-        ${post(40, 4, "published")}, ${post(50, 5, "published")}, ${post(51, 5, "published")}, ${post(60, 6, "published")}`),
+        ${post(40, 4, "published")}, ${post(50, 5, "published")}, ${post(51, 5, "published")}, ${post(60, 6, "published")}, ${post(70, 7, "published")}`),
       // Tool 5 (no snapshot, so under the floor) has a post you approved: it stays public.
       db.prepare("INSERT INTO review_decisions (post_id, decision) VALUES (50, 'approve')"),
     ]);
-    expect(await queueLowStarPreview(db)).toEqual({ minStars: 10, tools: 2, posts: 3 });
-    expect(await queueLowStarTools(db)).toEqual({ tools: 2, posts: 3 });
-    expect(await statuses("tools")).toEqual({ 1: "queued", 2: "published", 3: "queued", 4: "published", 5: "published", 6: "hidden" });
+    // Tool 7 was already queued but has a stray published post: it is moved too, and the preview counts it.
+    expect(await queueLowStarPreview(db)).toEqual({ minStars: 10, tools: 2, posts: 4 });
+    expect(await queueLowStarTools(db)).toEqual({ tools: 2, posts: 4 });
+    expect(await statuses("tools")).toEqual({ 1: "queued", 2: "published", 3: "queued", 4: "published", 5: "published", 6: "hidden", 7: "queued" });
     expect(await statuses("posts")).toEqual({
-      10: "queued", 11: "queued", 12: "rejected", 20: "published", 30: "queued", 40: "published", 50: "published", 51: "published", 60: "published",
+      10: "queued", 11: "queued", 12: "rejected", 20: "published", 30: "queued", 40: "published", 50: "published", 51: "published", 60: "published", 70: "queued",
     });
     expect(await queueLowStarPreview(db)).toEqual({ minStars: 10, tools: 0, posts: 0 });
   });

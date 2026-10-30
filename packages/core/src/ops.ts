@@ -159,25 +159,31 @@ const UNAPPROVED_LOW_STAR_TOOL = `status = 'published' AND ${lowStarTool("tools"
     AND EXISTS (SELECT 1 FROM posts p WHERE p.tool_id = tools.id AND p.status = 'published')
     AND NOT EXISTS (SELECT 1 FROM posts p JOIN review_decisions d ON d.post_id = p.id WHERE p.tool_id = tools.id AND p.status = 'published')`;
 
+/** Published, unreviewed posts of the tools `toolsWhere` (on `t`) picks, all with a repo under the floor. */
+const unreviewedPostsOf = (toolsWhere: string) => `status = 'published' AND id NOT IN (SELECT post_id FROM review_decisions)
+    AND tool_id IN (SELECT t.id FROM tools t WHERE ${lowStarTool("t")} AND (${toolsWhere}))`;
+
 /**
  * One-off after the star floor started applying to every source: tools that were
  * auto-published with a repo under `github_min_stars` go back to the review queue,
- * with their published posts. Tools first; then posts of queued low-star tools that
- * are still published and unreviewed. Used by the admin status panel and ops.yml.
+ * with their published posts. Tools first; then the unreviewed published posts of every
+ * queued low-star tool (any already queued tool's stray published posts too, which the
+ * preview counts). Used by the admin status panel and ops.yml.
  */
 export const QUEUE_LOW_STAR_SQL = [
   `UPDATE tools SET status = 'queued' WHERE ${UNAPPROVED_LOW_STAR_TOOL}`,
-  `UPDATE posts SET status = 'queued'
-  WHERE status = 'published' AND id NOT IN (SELECT post_id FROM review_decisions)
-    AND tool_id IN (SELECT t.id FROM tools t WHERE t.status = 'queued' AND ${lowStarTool("t")})`,
+  `UPDATE posts SET status = 'queued' WHERE ${unreviewedPostsOf("t.status = 'queued'")}`,
 ];
 
-/** The floor, and how many tools and posts QUEUE_LOW_STAR_SQL would move (for the confirmation screen). */
+/**
+ * The floor, and how many tools and posts QUEUE_LOW_STAR_SQL would move (for the
+ * confirmation screen). Posts are counted as the second statement will see them: on
+ * tools already queued, or about to be.
+ */
 export const QUEUE_LOW_STAR_PREVIEW_SQL = `SELECT
   ${setting("github_min_stars")} AS minStars,
   (SELECT count(*) FROM tools WHERE ${UNAPPROVED_LOW_STAR_TOOL}) AS tools,
-  (SELECT count(*) FROM posts WHERE status = 'published' AND id NOT IN (SELECT post_id FROM review_decisions)
-     AND tool_id IN (SELECT id FROM tools WHERE ${UNAPPROVED_LOW_STAR_TOOL})) AS posts`;
+  (SELECT count(*) FROM posts WHERE ${unreviewedPostsOf(`t.status = 'queued' OR t.id IN (SELECT id FROM tools WHERE ${UNAPPROVED_LOW_STAR_TOOL})`)}) AS posts`;
 
 export interface QueueLowStarPreview {
   minStars: number;

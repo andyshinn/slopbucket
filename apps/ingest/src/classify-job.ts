@@ -2,7 +2,7 @@ import { type Classification, type ClassifyJob, type TagGroups, autoPublishes, c
 import { type FewShotExample, classifierFingerprint, classifyPost } from "./classifier.ts";
 import { getArticleText } from "./content.ts";
 import type { Deps } from "./deps.ts";
-import { USER_AGENT } from "./http.ts";
+import { fetchRepoStats, upsertRepoSnapshot } from "./http.ts";
 
 interface PostRow {
   id: number;
@@ -128,30 +128,23 @@ async function route(deps: Deps, post: PostRow, c: Classification, threshold: nu
 }
 
 /**
- * Whether the tool's GitHub repo has fewer than `minStars` stars. Unknown counts as
- * under (GitHub didn't answer, or the repo was renamed or deleted), so the post waits
- * for review. Tools without a repo have no floor.
+ * Whether the tool's GitHub repo has fewer than `minStars` stars. A repo GitHub can't
+ * find (renamed, deleted or private) counts as under, so the post waits for review.
+ * A rate limit, server error or network failure throws, so the queue retries the post
+ * later instead of sending it to review. Tools without a repo have no floor.
  */
 async function belowStarFloor(deps: Deps, toolId: number, minStars: number): Promise<boolean> {
   const tool = await deps.db.prepare("SELECT github_repo FROM tools WHERE id = ?").bind(toolId).first<{ github_repo: string | null }>();
   if (!tool?.github_repo) return false;
-  const stars = await repoStars(tool.github_repo, deps);
-  return stars === null || stars < minStars;
-}
-
-async function repoStars(repo: string, deps: Deps): Promise<number | null> {
-  const headers: Record<string, string> = { "user-agent": USER_AGENT, accept: "application/vnd.github+json" };
-  if (deps.githubToken) headers.authorization = `Bearer ${deps.githubToken}`;
-  try {
-    const res = await deps.fetch(`https://api.github.com/repos/${repo}`, { headers, signal: AbortSignal.timeout(15_000) });
-    if (!res.ok) throw new Error(`GET repo -> ${res.status}`);
-    const { stargazers_count } = (await res.json()) as { stargazers_count?: unknown };
-    if (typeof stargazers_count !== "number") throw new Error("no stargazers_count");
-    return stargazers_count;
-  } catch (err) {
-    console.warn(JSON.stringify({ event: "repo_stars_failed", repo, error: String(err) }));
-    return null;
+  const stats = await fetchRepoStats(deps.fetch, deps.githubToken, tool.github_repo);
+  if (stats === "limited") throw new Error(`GitHub rate limit while checking ${tool.github_repo}'s stars`);
+  if (stats === "missing") {
+    console.warn(JSON.stringify({ event: "repo_missing", tool_id: toolId, repo: tool.github_repo }));
+    return true;
   }
+  // Kept as today's snapshot, so Publish confident posts and the site judge by the same count.
+  await upsertRepoSnapshot(deps.db, toolId, new Date().toISOString().slice(0, 10), stats).run();
+  return stats.stars < minStars;
 }
 
 /**

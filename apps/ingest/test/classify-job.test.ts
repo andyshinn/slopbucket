@@ -70,17 +70,21 @@ describe("runClassifyJob", () => {
     expect((request as unknown as { reasoning_effort: string }).reasoning_effort).toBe("low");
   });
 
-  // The repo's star count, as GitHub's API returns it (only asked for when the post would publish).
-  const stars = (n: number) => fakeFetch((url) => (url === "https://api.github.com/repos/patchwork-labs/patchwork" ? json({ stargazers_count: n }) : undefined));
+  // GitHub's answer for the repo (only asked for when the post would publish).
+  const REPO_URL = "https://api.github.com/repos/patchwork-labs/patchwork";
+  const github = (res: () => Response) => fakeFetch((url) => (url === REPO_URL ? res() : undefined));
+  const stars = (n: number) => github(() => json({ stargazers_count: n, forks_count: 2, language: "TypeScript", license: { spdx_id: "MIT" } }));
   const toolStatus = async (id: number) =>
     (await env.DB.prepare("SELECT t.status FROM tools t JOIN posts p ON p.tool_id = t.id WHERE p.id = ?").bind(id).first<{ status: string }>())!.status;
 
-  it("publishes at or above the threshold and publishes the tool", async () => {
+  it("publishes at or above the threshold and publishes the tool, keeping the stars as a snapshot", async () => {
     await setThreshold(0.8);
     const id = await insertPost();
     await runClassifyJob({ kind: "classify", post_id: id }, makeDeps({ ai: fakeAi(tool()), fetch: stars(10) }));
     expect((await post(id))!.status).toBe("published");
     expect(await toolStatus(id)).toBe("published");
+    const snap = await env.DB.prepare("SELECT stars, forks, language, license FROM repo_snapshots WHERE tool_id = ?").bind((await post(id))!.tool_id).first();
+    expect(snap).toEqual({ stars: 10, forks: 2, language: "TypeScript", license: "MIT" });
   });
 
   it("queues a confident post whose repo is under github_min_stars, whatever the source", async () => {
@@ -91,18 +95,63 @@ describe("runClassifyJob", () => {
     expect(await toolStatus(id)).toBe("queued");
   });
 
-  it("queues it when GitHub doesn't answer, and skips the check for tools without a repo", async () => {
+  it("reads the floor from settings", async () => {
     await setThreshold(0.8);
-    const unknown = await insertPost();
-    const fetch = fakeFetch((url) => (url.startsWith("https://api.github.com/repos/") ? new Response("", { status: 404 }) : undefined));
-    await runClassifyJob({ kind: "classify", post_id: unknown }, makeDeps({ ai: fakeAi(tool()), fetch }));
-    expect((await post(unknown))!.status).toBe("queued");
+    await env.DB.prepare("UPDATE settings SET value = '50' WHERE key = 'github_min_stars'").run();
+    const under = await insertPost();
+    await runClassifyJob({ kind: "classify", post_id: under }, makeDeps({ ai: fakeAi(tool()), fetch: stars(49) }));
+    expect((await post(under))!.status).toBe("queued");
+    const over = await insertPost();
+    await runClassifyJob({ kind: "classify", post_id: over }, makeDeps({ ai: fakeAi(tool()), fetch: stars(50) }));
+    expect((await post(over))!.status).toBe("published");
+  });
 
-    const closed = await insertPost();
+  it("holds only the post when its tool is already published", async () => {
+    await setThreshold(0.8);
+    const first = await insertPost();
+    await runClassifyJob({ kind: "classify", post_id: first }, makeDeps({ ai: fakeAi(tool()), fetch: stars(12) }));
+    const later = await insertPost(); // the repo lost stars since
+    await runClassifyJob({ kind: "classify", post_id: later }, makeDeps({ ai: fakeAi(tool()), fetch: stars(9) }));
+    expect((await post(later))!.status).toBe("queued");
+    expect(await toolStatus(later)).toBe("published");
+    expect((await post(first))!.status).toBe("published");
+  });
+
+  it("queues the post when GitHub can't find the repo", async () => {
+    await setThreshold(0.8);
+    const id = await insertPost();
+    await runClassifyJob({ kind: "classify", post_id: id }, makeDeps({ ai: fakeAi(tool()), fetch: github(() => new Response("", { status: 404 })) }));
+    expect((await post(id))!.status).toBe("queued");
+  });
+
+  it("throws on a rate limit, server error, network error or malformed answer, so the queue retries the post", async () => {
+    await setThreshold(0.8);
+    const failures: [string, () => Response][] = [
+      ["rate limit", () => new Response("", { status: 403 })],
+      ["too many requests", () => new Response("", { status: 429 })],
+      ["server error", () => new Response("", { status: 502 })],
+      ["network error", () => {
+        throw new TypeError("fetch failed");
+      }],
+      ["no stargazers_count", () => json({ message: "Moved" })],
+    ];
+    for (const [name, res] of failures) {
+      const id = await insertPost();
+      await expect(runClassifyJob({ kind: "classify", post_id: id }, makeDeps({ ai: fakeAi(tool()), fetch: github(res) })), name).rejects.toThrow();
+      // Still pending, with the classification stored: the retry reuses it instead of calling the model.
+      expect(await post(id), name).toMatchObject({ status: "pending", confidence: 0.92 });
+      await runClassifyJob({ kind: "classify", post_id: id }, makeDeps({ fetch: stars(10) }));
+      expect((await post(id))!.status, name).toBe("published");
+    }
+  });
+
+  it("skips the check for tools without a repo", async () => {
+    await setThreshold(0.8);
+    const id = await insertPost();
     const noCalls = fakeFetch();
     const ai = fakeAi(tool({ tool_name: "Closedly", homepage_url: "https://closedly.ai", github_repo: null, is_open_source: false }));
-    await runClassifyJob({ kind: "classify", post_id: closed }, makeDeps({ ai, fetch: noCalls }));
-    expect((await post(closed))!.status).toBe("published");
+    await runClassifyJob({ kind: "classify", post_id: id }, makeDeps({ ai, fetch: noCalls }));
+    expect((await post(id))!.status).toBe("published");
     expect(noCalls.calls).toEqual([]);
   });
 
