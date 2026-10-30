@@ -20,6 +20,10 @@ describe("trendingScore", () => {
     expect(trendingScore({ ...base, hours: 100 }, w)).toBeLessThan(trendingScore(base, w));
     expect(trendingScore({ ...base, starsGained7d: -20 }, w)).toBe(trendingScore(base, w));
   });
+  it("treats net-negative engagement as none", () => {
+    const base = { sources: 1, points: 0, comments: 0, starsGained7d: 0, hours: 1 };
+    for (const points of [-1, -4]) expect(trendingScore({ ...base, points }, w)).toBe(trendingScore(base, w));
+  });
 });
 
 async function tool(id: number, over: { repo?: string | null; open?: number; status?: string; lastPost: string }) {
@@ -114,6 +118,41 @@ describe("runTrendingJob", () => {
     const run = await db.prepare("SELECT mode, error FROM source_runs").first<{ mode: string; error: string }>();
     expect(run!.mode).toBe("manual");
     expect(run!.error).toContain("GitHub stats for 1 of 2 repos; add the GH_API_TOKEN secret");
+  });
+
+  it("counts a flagged lobste.rs story as no engagement", async () => {
+    await tool(1, { repo: null, open: 0, lastPost: hoursAgo(2) });
+    await tool(2, { repo: null, open: 0, lastPost: hoursAgo(2) });
+    await post(1, "lobsters", "flagd1", hoursAgo(2));
+    await post(2, "lobsters", "flagd2", hoursAgo(2));
+    await post(2, "lobsters", "good22", hoursAgo(3));
+    await db.prepare("UPDATE tools SET is_active = 1").run();
+    // Flags push a lobste.rs score below zero; it must neither make ln(1 + P + 2C) NaN
+    // nor cancel the upvotes of the tool's other posts.
+    const scores: Record<string, number> = { flagd1: -4, flagd2: -4, good22: 6 };
+    const fetch = fakeFetch((url) => {
+      const id = url.match(/^https:\/\/lobste\.rs\/s\/(\w+)\.json$/)?.[1];
+      return id ? json({ score: scores[id], comment_count: 0 }) : undefined;
+    });
+    await runTrendingJob({ kind: "trending", mode: "daily" }, makeDeps({ fetch }), NOW);
+    const tools = (await db.prepare("SELECT trending_score FROM tools ORDER BY id").all<{ trending_score: number }>()).results;
+    const w = { w_s: 3, w_e: 1, w_g: 1.5, g: 1.5 };
+    expect(tools[0]!.trending_score).toBeCloseTo(trendingScore({ sources: 1, points: 0, comments: 0, starsGained7d: 0, hours: 2 }, w), 6);
+    expect(tools[1]!.trending_score).toBeCloseTo(trendingScore({ sources: 1, points: 6, comments: 0, starsGained7d: 0, hours: 2 }, w), 6);
+    const run = await db.prepare("SELECT items_fetched, error FROM source_runs").first();
+    expect(run).toMatchObject({ items_fetched: 2, error: null });
+  });
+
+  it("scores 0 and warns instead of failing the batch when a score is not a number", async () => {
+    for (let id = 1; id <= 13; id++) await tool(id, { repo: null, lastPost: hoursAgo(1) });
+    await post(1, "github", "acme/a", hoursAgo(1));
+    await db.prepare("UPDATE tools SET trending_score = 5, last_post_at = 'not a date', first_seen_at = 'not a date' WHERE id > 1").run();
+    await runTrendingJob({ kind: "trending", mode: "daily" }, makeDeps({ fetch: fakeFetch() }), NOW);
+    const scores = (await db.prepare("SELECT id, trending_score FROM tools ORDER BY id").all<{ id: number; trending_score: number }>()).results;
+    expect(scores[0]!.trending_score).toBeGreaterThan(0);
+    expect(scores.slice(1).every((t) => t.trending_score === 0)).toBe(true);
+    const run = await db.prepare("SELECT items_fetched, error FROM source_runs").first();
+    expect(run).toMatchObject({ items_fetched: 13, error: "trending score not a number for tools 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 and 2 more; set to 0" });
   });
 
   it("records a failed run and rethrows", async () => {

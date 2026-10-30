@@ -2,7 +2,7 @@
 
 Where Slop Bucket stands, so a new session can pick up without the chat history. Update this file in each PR that moves the launch plan, changes what's next, or resolves an open issue.
 
-**Last updated:** 2026-10-20 (Status page restyle)
+**Last updated:** 2026-10-30 (fix: daily update failed on a negative lobste.rs score)
 
 ## Resuming in a new session
 
@@ -38,6 +38,7 @@ Built outside the plan's step list, all needed before launch: the daily trending
 
 ## Open issues
 
+- **Daily update failed with `NOT NULL constraint failed: tools.trending_score`** (fixed in this PR): a flagged lobste.rs story with a negative score made `ln(1 + P + 2C)` NaN, D1 bound it as NULL, and the whole batch failed, so no tool was scored. After the deploy, press Run on Status → Daily update and check it scores tools.
 - **Trending cron didn't run on Oct 9.** `source_runs` has only the manual trending run from Oct 8 20:49 UTC, and nothing from the 07:00 UTC cron on Oct 9, although the 06:00 fetch ran. Check tomorrow's 07:00 run on `sb-ingest`; if it's missing again, check the deployed cron triggers and the ingest logs.
 - **Rename cleanup failed.** The `rename.yml` "cleanup" run on Oct 9 23:55 failed with R2 429 (rate limited) while deleting `radar-articles` objects. Re-run cleanup; already-deleted objects return 404, which the script ignores. Afterwards, delete `rename.yml` and `.github/scripts/copy-data.mjs`.
 - **Unmerged commit:** `649a841` ("Attach slopbucket.app in the dashboard instead of wrangler routes") sits on `rename-slop-bucket` after #17 merged. Decide whether it's still wanted.
