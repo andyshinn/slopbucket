@@ -91,14 +91,18 @@ export function autoPublishes(threshold: number, confidence: number, category: s
 const setting = (key: string) => `(SELECT json_extract(value, '$') FROM settings WHERE key = '${key}')`;
 
 /**
- * Unreviewed queued posts that autoPublishes() would publish under today's settings,
- * judged from their stored classification. A category no longer in the list (it was
- * removed after the post was classified) waits for review or a re-classify instead.
+ * Unreviewed queued posts that publish-confident may publish at some threshold, judged
+ * from their stored classification. A category no longer in the list (it was removed
+ * after the post was classified) waits for review or a re-classify instead. Also used
+ * by the threshold histogram on Settings.
  */
-const CONFIDENT_QUEUED = `${UNREVIEWED_QUEUED} AND tool_id IS NOT NULL AND confidence IS NOT NULL
-    AND ${setting("review_threshold")} < 1 AND confidence >= ${setting("review_threshold")}
-    AND json_extract(classification, '$.category') != 'other'
+export const PUBLISHABLE_QUEUED_SQL = `${UNREVIEWED_QUEUED} AND tool_id IS NOT NULL AND confidence IS NOT NULL
     AND json_extract(classification, '$.category') IN (SELECT value FROM json_each((SELECT value FROM settings WHERE key = 'categories')))`;
+
+/** Of those, the posts autoPublishes() would publish under today's settings. */
+const CONFIDENT_QUEUED = `${PUBLISHABLE_QUEUED_SQL}
+    AND ${setting("review_threshold")} < 1 AND confidence >= ${setting("review_threshold")}
+    AND json_extract(classification, '$.category') != 'other'`;
 
 /**
  * Applies the current review threshold to the queue without calling the model: confident

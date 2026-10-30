@@ -1,4 +1,4 @@
-import { SETTING_KEYS, type SettingKey, type TagGroups, settingSchemas } from "@slop-bucket/core";
+import { PUBLISHABLE_QUEUED_SQL, SETTING_KEYS, type SettingKey, type TagGroups, autoPublishes, settingSchemas } from "@slop-bucket/core";
 
 export type FieldKind = "number" | "integer" | "text" | "lines" | "weights" | "reasoning" | "taggroups";
 
@@ -124,6 +124,93 @@ export async function suggestedTags(db: D1Database, limit = 20): Promise<{ tag: 
     .bind(limit)
     .all<{ tag: string; n: number }>();
   return results;
+}
+
+export interface ThresholdBucket {
+  /** Lower edge, 0 to 0.9 in steps of 0.1; the top bucket also holds 1.0. */
+  from: number;
+  /** Queued posts with a score in this bucket. */
+  posts: number;
+  /** Of those, posts in "other", which never auto-publish. */
+  other: number;
+  /** Of those, posts Publish confident posts would publish at the current threshold. */
+  publishNow: number;
+  /** Queued posts Publish confident posts would publish at a threshold of `from`. */
+  publishAt: number;
+}
+
+export interface ThresholdHistogram {
+  /** Highest bucket first. */
+  buckets: ThresholdBucket[];
+  /** Queued posts without a score (invalid model output); they always stay in review. */
+  noScore: number;
+  /** Scored posts, not "other", that it never publishes: already reviewed, or a category since removed. */
+  held: number;
+  queued: number;
+  /** Queued posts Publish confident posts would publish at the current threshold. */
+  publishAtCurrent: number;
+}
+
+export interface QueuedScore {
+  confidence: number | null;
+  category: string | null;
+  /** Matches PUBLISHABLE_QUEUED_SQL: Publish confident posts may publish it at some threshold. */
+  eligible: 0 | 1 | null;
+  n: number;
+}
+
+/** Queued posts grouped by exact score, category and eligibility, for thresholdHistogram(). */
+export async function queuedScores(db: D1Database): Promise<QueuedScore[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT confidence, json_extract(classification, '$.category') AS category, (${PUBLISHABLE_QUEUED_SQL}) AS eligible, count(*) AS n
+       FROM posts WHERE status = 'queued' GROUP BY 1, 2, 3`,
+    )
+    .all<QueuedScore>();
+  return results;
+}
+
+/** Bucket edges above 0; a score's bucket is how many it is at or above. */
+const EDGES = Array.from({ length: 9 }, (_, k) => (k + 1) / 10);
+
+/**
+ * Queued posts in 0.1 buckets of stored confidence, with how many Publish confident
+ * posts would publish at each threshold (the same posts and rule as PUBLISH_CONFIDENT_SQL).
+ */
+export function thresholdHistogram(rows: QueuedScore[], threshold: number): ThresholdHistogram {
+  const buckets = Array.from({ length: 10 }, (_, b) => ({ from: b / 10, posts: 0, other: 0, publishNow: 0, publishAt: 0, publishable: 0 }));
+  let noScore = 0;
+  let held = 0;
+  let queued = 0;
+  for (const r of rows) {
+    queued += r.n;
+    if (r.confidence === null) {
+      noScore += r.n;
+      continue;
+    }
+    // The same >= comparison as the threshold (exact decimal edges), so a score of 0.8 sits in
+    // 0.8–0.9 and publishes at 0.8. 1.0 is at or above every edge, so it lands in the top bucket.
+    const confidence = r.confidence;
+    const bucket = buckets[EDGES.filter((e) => confidence >= e).length]!;
+    bucket.posts += r.n;
+    if (r.category === "other") bucket.other += r.n;
+    else if (r.eligible !== 1) held += r.n;
+    else {
+      // At the bucket's own low edge (below 1, not "other") autoPublishes() holds for every such post.
+      bucket.publishable += r.n;
+      if (autoPublishes(threshold, confidence, r.category ?? "")) bucket.publishNow += r.n;
+    }
+  }
+  // A threshold at a bucket's low edge publishes that bucket and every one above it.
+  let above = 0;
+  for (let b = buckets.length - 1; b >= 0; b--) buckets[b]!.publishAt = above += buckets[b]!.publishable;
+  return {
+    buckets: buckets.reverse().map(({ publishable: _, ...b }) => b),
+    noScore,
+    held,
+    queued,
+    publishAtCurrent: buckets.reduce((n, b) => n + b.publishNow, 0),
+  };
 }
 
 /** Validates with the same schema the Worker uses, then saves. */

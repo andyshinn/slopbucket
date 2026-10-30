@@ -1,0 +1,94 @@
+---
+// Queued posts by confidence, under the review threshold on Settings: what Publish confident posts would publish at each threshold. No JS.
+import type { ThresholdHistogram } from "../lib/settings-admin.ts";
+import { accentLink, num } from "../lib/ui.ts";
+
+interface Props {
+  histogram: ThresholdHistogram;
+  threshold: number;
+}
+const { histogram, threshold } = Astro.props;
+const { buckets, noScore, held, queued, publishAtCurrent } = histogram;
+const widest = Math.max(1, ...buckets.map((b) => b.posts));
+const other = buckets.reduce((sum, b) => sum + b.other, 0);
+const pct = (n: number) => `${(n / widest) * 100}%`;
+const range = (from: number) => `${from.toFixed(1)}–${Math.min(1, from + 0.1).toFixed(1)}`;
+const h3 = "font-mono text-xs font-bold tracking-widest text-stone-500 uppercase";
+---
+
+<section aria-labelledby="threshold-histogram-h" class="mt-4 border-t border-stone-200 pt-4">
+  <h3 id="threshold-histogram-h" class={h3}>Queue by confidence</h3>
+  <p class="mt-2 text-sm text-stone-700">
+    {
+      threshold < 1 ? (
+        <>
+          <span class="font-mono text-2xl font-bold tracking-tight text-stone-900 tabular-nums">{num(publishAtCurrent)}</span> of {num(queued)} queued
+          posts would publish at {threshold}.
+        </>
+      ) : (
+        <>At 1, nothing publishes automatically. {num(queued)} posts are queued.</>
+      )
+    }
+  </p>
+
+  {
+    queued > 0 && (
+      <>
+        <ul class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-stone-600">
+          <li class="flex items-center gap-1.5">
+            <span class="size-2.5 rounded-sm bg-lime-500" aria-hidden="true" />
+            Publishes at {threshold}
+          </li>
+          <li class="flex items-center gap-1.5">
+            <span class="size-2.5 rounded-sm bg-stone-400" aria-hidden="true" />
+            Stays queued
+          </li>
+          <li class="flex items-center gap-1.5">
+            <span class="size-2.5 rounded-sm bg-stone-200" aria-hidden="true" />
+            "other" (never auto-publishes)
+          </li>
+        </ul>
+
+        <table class="mt-3 w-full text-sm">
+          <caption class="sr-only">Queued posts by confidence, and how many would publish at each threshold</caption>
+          <thead>
+            <tr class="text-left text-xs text-stone-500">
+              <th scope="col" class="w-16 pb-1 font-medium">Score</th>
+              <th scope="col" class="pb-1 font-medium">Queued</th>
+              <th scope="col" class="w-20 pb-1 text-right font-medium">Publish at low end</th>
+            </tr>
+          </thead>
+          <tbody>
+            {buckets.map((b) => (
+              <tr>
+                <th scope="row" class="py-1 text-left font-mono text-xs font-normal text-stone-600 tabular-nums">
+                  {range(b.from)}
+                </th>
+                <td class="py-1">
+                  <div class="flex items-center gap-2">
+                    <div class="flex h-3 min-w-0 flex-1 gap-0.5">
+                      {b.publishNow > 0 && <div class="rounded-sm bg-lime-500" style={`width: ${pct(b.publishNow)}`} />}
+                      {b.posts - b.other - b.publishNow > 0 && (
+                        <div class="rounded-sm bg-stone-400" style={`width: ${pct(b.posts - b.other - b.publishNow)}`} />
+                      )}
+                      {b.other > 0 && <div class="rounded-sm bg-stone-200" style={`width: ${pct(b.other)}`} />}
+                    </div>
+                    <span class="w-10 shrink-0 text-right font-mono text-xs text-stone-900 tabular-nums">{num(b.posts)}</span>
+                  </div>
+                </td>
+                <td class="py-1 text-right font-mono text-xs text-stone-900 tabular-nums">{num(b.publishAt)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </>
+    )
+  }
+
+  <p class="mt-3 text-xs text-stone-500">
+    "Publish at low end" is how many queued posts would publish with the threshold set to the bottom of that row (0.8 for 0.8–0.9). Saving a threshold
+    applies to new posts; to publish the lime part of the queue from stored scores (no model calls), use Publish confident posts on{" "}
+    <a href="/admin/status#jobs-h" class={accentLink}>Status → Jobs</a>. These always stay in review: {num(other)} in "other", {num(held)} already reviewed
+    or in a category since removed (gray), and {num(noScore)} without a score (invalid model output, not shown).
+  </p>
+</section>
