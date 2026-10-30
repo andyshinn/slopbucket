@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { publishConfidentPreview, publishConfidentQueued } from "@slop-bucket/core";
+import { autoPublishes, publishConfidentPreview, publishConfidentQueued } from "@slop-bucket/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import gateway from "../../../infra/ai-gateway.json";
 import {
@@ -157,6 +157,29 @@ describe("publish confident posts", () => {
     expect(await statuses("tools")).toEqual({ 1: "published", 2: "hidden", 3: "queued", 4: "queued", 5: "queued", 6: "published" });
     expect(await db.prepare("SELECT count(*) AS n FROM review_decisions").first()).toEqual({ n: 1 });
     expect(await publishConfidentPreview(db)).toEqual({ threshold: 0.8, posts: 0, tools: 0 });
+  });
+
+  it("follows the same rule as autoPublishes() in the classify job", async () => {
+    await db.prepare("INSERT INTO tools (id, slug, name, status) VALUES (1, 'a', 'A', 'queued')").run();
+    for (const threshold of [0, 0.5, 0.8, 1]) {
+      for (const confidence of [0, 0.49, 0.5, 0.8, 0.95, 1]) {
+        for (const category of ["agent", "other"]) {
+          await setThreshold(threshold);
+          await db.prepare("DELETE FROM posts").run();
+          await db
+            .prepare(
+              `INSERT INTO posts (id, source, external_id, url, canonical_url, title, posted_at, status, tool_id, confidence, classification)
+               VALUES (1, 'hn', '1', 'u', 'u', 't', '2026-10-01T00:00:00Z', 'queued', 1, ?, ?)`,
+            )
+            .bind(confidence, JSON.stringify({ category }))
+            .run();
+          const { posts } = await publishConfidentPreview(db);
+          expect({ threshold, confidence, category, publishes: posts === 1 }).toEqual({
+            threshold, confidence, category, publishes: autoPublishes(threshold, confidence, category),
+          });
+        }
+      }
+    }
   });
 });
 

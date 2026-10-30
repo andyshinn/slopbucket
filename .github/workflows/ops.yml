@@ -138,8 +138,6 @@ jobs:
             echo "Enqueued $job" | tee -a "$GITHUB_STEP_SUMMARY"
           done
 
-      # One-off after a classifier change: re-run classification on queued posts nobody
-      # has reviewed yet. Their extracted text is cached in R2, so nothing is re-fetched.
       # After lowering review_threshold: publish unreviewed queued posts already at or
       # above it, from their stored confidence. No model calls, nothing re-fetched.
       - name: Publish confident queued posts
@@ -157,6 +155,8 @@ jobs:
           pnpm exec wrangler d1 execute DB --remote --file publish.sql
           echo "Done." | tee -a "$GITHUB_STEP_SUMMARY"
 
+      # One-off after a classifier change: re-run classification on queued posts nobody
+      # has reviewed yet. Their extracted text is cached in R2, so nothing is re-fetched.
       - name: Reclassify unreviewed queued posts
         if: inputs.action == 'reclassify-queued'
         working-directory: apps/ingest

@@ -23,6 +23,9 @@ export function fetchJobs(sources: readonly Source[], mode: "manual" | "backfill
   );
 }
 
+/** Queued posts nobody has acted on: the posts re-classify and publish-confident may change. */
+const UNREVIEWED_QUEUED = "status = 'queued' AND id NOT IN (SELECT post_id FROM review_decisions)";
+
 const ORPHAN_TOOL = `t.status = 'queued'
     AND NOT EXISTS (SELECT 1 FROM posts p WHERE p.tool_id = t.id)
     AND NOT EXISTS (SELECT 1 FROM tool_merges m WHERE m.from_tool_id = t.id OR m.into_tool_id = t.id)
@@ -39,7 +42,7 @@ export const RESET_UNREVIEWED_QUEUED_SQL = [
   `UPDATE posts
   SET status = 'pending', classification = NULL, confidence = NULL, raw_output = NULL,
       tool_id = NULL, post_type = NULL, version = NULL, classified_at = NULL
-  WHERE status = 'queued' AND id NOT IN (SELECT post_id FROM review_decisions)`,
+  WHERE ${UNREVIEWED_QUEUED}`,
   `DELETE FROM tool_aliases WHERE tool_id IN (SELECT t.id FROM tools t WHERE ${ORPHAN_TOOL})`,
   `DELETE FROM tools WHERE id IN (SELECT t.id FROM tools t WHERE ${ORPHAN_TOOL})`,
 ];
@@ -60,7 +63,7 @@ export const RESET_OLD_MODEL_DROPS_SQL = `UPDATE posts
 
 /** How many posts and tools a reset would touch (for the confirmation screen). */
 export const RESET_PREVIEW_SQL = `SELECT
-  (SELECT count(*) FROM posts WHERE status = 'queued' AND id NOT IN (SELECT post_id FROM review_decisions)) AS posts,
+  (SELECT count(*) FROM posts WHERE ${UNREVIEWED_QUEUED}) AS posts,
   (SELECT count(*) FROM posts WHERE status = 'queued' AND id IN (SELECT post_id FROM review_decisions)) AS kept,
   (SELECT count(*) FROM posts WHERE ${OLD_MODEL_DROP}) AS old_drops`;
 
@@ -92,11 +95,10 @@ const setting = (key: string) => `(SELECT json_extract(value, '$') FROM settings
  * judged from their stored classification. A category no longer in the list (it was
  * removed after the post was classified) waits for review or a re-classify instead.
  */
-const CONFIDENT_QUEUED = `status = 'queued' AND tool_id IS NOT NULL AND confidence IS NOT NULL
+const CONFIDENT_QUEUED = `${UNREVIEWED_QUEUED} AND tool_id IS NOT NULL AND confidence IS NOT NULL
     AND ${setting("review_threshold")} < 1 AND confidence >= ${setting("review_threshold")}
     AND json_extract(classification, '$.category') != 'other'
-    AND json_extract(classification, '$.category') IN (SELECT value FROM json_each((SELECT value FROM settings WHERE key = 'categories')))
-    AND id NOT IN (SELECT post_id FROM review_decisions)`;
+    AND json_extract(classification, '$.category') IN (SELECT value FROM json_each((SELECT value FROM settings WHERE key = 'categories')))`;
 
 /**
  * Applies the current review threshold to the queue without calling the model: confident
