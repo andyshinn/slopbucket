@@ -29,6 +29,8 @@ export interface SourceStatus {
    * they are left out of the comparison.
    */
   weekAverage: number | null;
+  /** Items in the latest finished, error-free daily or manual run (the one compared with the average). */
+  latestItems: number | null;
   /** The latest finished daily or manual run fetched less than half the weekly average. */
   dropWarning: boolean;
 }
@@ -70,9 +72,22 @@ export async function sourceStatuses(db: D1Database): Promise<SourceStatus[]> {
         : null;
       const weekAverage = avg?.a ?? null;
       const dropWarning = Boolean(latest && weekAverage && latest.items_fetched < weekAverage / 2);
-      return { source, last, weekAverage, dropWarning };
+      return { source, last, weekAverage, latestItems: latest?.items_fetched ?? null, dropWarning };
     }),
   );
+}
+
+/** The classifier model and reasoning effort from settings, for the Status title row. */
+export async function classifierModel(db: D1Database): Promise<{ id: string | null; effort: string | null }> {
+  const { results } = await db
+    .prepare("SELECT key, value FROM settings WHERE key IN ('model_id', 'model_reasoning_effort')")
+    .all<{ key: string; value: string }>();
+  const get = (key: string) => {
+    const v = results.find((r) => r.key === key)?.value;
+    const parsed: unknown = v === undefined ? null : JSON.parse(v);
+    return typeof parsed === "string" && parsed !== "" ? parsed : null;
+  };
+  return { id: get("model_id"), effort: get("model_reasoning_effort") };
 }
 
 export async function postCounts(db: D1Database): Promise<Record<string, number>> {

@@ -38,6 +38,18 @@ export function aboutDuration(minutes: number): string {
   return plural(Math.round(minutes / 1440), "day");
 }
 
+/** A count with thousands separators: "1,245". */
+export const num = (n: number) => n.toLocaleString("en");
+
+/** A run's length: "9s", "1m 30s", "2h 5m". */
+export function shortDuration(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return s % 60 ? `${m}m ${s % 60}s` : `${m}m`;
+  return m % 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${Math.floor(m / 60)}h`;
+}
+
 export function hostname(url: string): string {
   try {
     return new URL(url).hostname.replace(/^www\./, "");

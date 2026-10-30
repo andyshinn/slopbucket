@@ -2,7 +2,7 @@
 
 Where Slop Bucket stands, so a new session can pick up without the chat history. Update this file in each PR that moves the launch plan, changes what's next, or resolves an open issue.
 
-**Last updated:** 2026-10-11 (step 5: admin nav and stone neutrals)
+**Last updated:** 2026-10-20 (Status page restyle)
 
 ## Resuming in a new session
 
@@ -19,7 +19,7 @@ Where Slop Bucket stands, so a new session can pick up without the chat history.
 | 3. GitHub adapter (Reddit dropped, Product Hunt waiting) | Done (#4) |
 | 4. Admin review queue | Done (#5, #6) |
 | 5. Admin status panel and settings | Done (#8, #10) |
-| 6. 90-day backfill, review the queue | **In progress**: the 90-day backfill is running (started 2026-10-12); review the queue as it fills |
+| 6. 90-day backfill, review the queue | **In progress**: the 90-day backfill (started 2026-10-12) has finished fetching and is still classifying (2026-10-20); review the queue as it fills |
 | 7. Tune prompt, few-shot, categories, trending weights | Started early: classifier accuracy (#7), categories v3 (#11), tag vocabulary (#14) |
 | 8. Lower the threshold, go public | Not started. Needs the public site (below) |
 
@@ -27,12 +27,12 @@ Built outside the plan's step list, all needed before launch: the daily trending
 
 ## Next steps, in order
 
-1. **Re-classify for tags** (the owner, from the phone): Admin → Status → "Re-classify unreviewed posts…". The 433 posts queued before the tag vocabulary (#14) still carry tags from the migration, not from the new prompt. About $0.17 and 35 minutes.
-2. **Start the 90-day backfill:** Status → Backfill, all sources, 90 days. That's about 28,000 posts and $11. The AI Gateway cap is $15/day, so the cap doesn't slow it: it takes about 40 hours at ~12 a minute, and the In progress card shows progress.
+1. ~~Re-classify for tags~~: done. The posts queued before the tag vocabulary (#14) now carry tags from the current prompt.
+2. **Let the 90-day backfill finish.** Started 2026-10-12; as of 2026-10-20 every fetch run is done and classification is still running. Status → In progress shows the posts left and the ETA. If the Classifying card says nothing moved in 15 minutes, it's usually the $15/day AI Gateway cap, and it resumes after the 06:00 UTC run.
 3. **Review the queue** as it fills. Use Tools → Merge for duplicate tools. Mark good decisions as few-shot examples.
 4. **Build while the backfill runs:**
    - ~~Queue page improvements~~: done (Resolves to box, tag chips, reason quote, lime Approve).
-   - **The public site**, following the handoff's suggested build order. Steps 1 (tokens, layout, theme, `/about`), 2 (home trending list, rows, `/avatar/[owner]`, 5-minute edge cache), 3 (filters with faceted counts, sort, `/search`, `/new`, `/category/[name]`, the phone filter dialog) and 4 (tool pages with merge redirects, the report form, per-IP rate limits) are done. The admin Reports page (handoff step 8) is done too. Step 5 (admin restyle: top bar with logo, ADMIN chip and View site; scrolling underline tabs with counts; stone neutrals; the queue polish and lime Approve came earlier in #19) is done. Step 6's Tools polish (desktop table with tiles and category badges, stacked list on phones; edit page with tile header, description count and hint, segmented Source control, "via merge" aliases, "Show all" posts, and an Other actions card) is done. **Next:** the Status page restyle, or step 9, the desktop admin shell. Merge redirects (301 from a merged tool's slug) are part of the tool page.
+   - **The public site**, following the handoff's suggested build order. Steps 1 (tokens, layout, theme, `/about`), 2 (home trending list, rows, `/avatar/[owner]`, 5-minute edge cache), 3 (filters with faceted counts, sort, `/search`, `/new`, `/category/[name]`, the phone filter dialog) and 4 (tool pages with merge redirects, the report form, per-IP rate limits) are done. The admin Reports page (handoff step 8) is done too. Step 5 (admin restyle: top bar with logo, ADMIN chip and View site; scrolling underline tabs with counts; stone neutrals; the queue polish and lime Approve came earlier in #19) is done. Step 6's Tools polish (desktop table with tiles and category badges, stacked list on phones; edit page with tile header, description count and hint, segmented Source control, "via merge" aliases, "Show all" posts, and an Other actions card) is done. The Status page restyle (model ID in the title row, mono section labels, lime progress bars, source cards with shaped status marks, run durations and the drop percentage, a muted Product Hunt card, and a Jobs list that leads to the backfill form and the re-classify confirmation) is done. **Next:** step 9, the desktop admin shell. Merge redirects (301 from a merged tool's slug) are part of the tool page.
    - ~~Reports page (admin)~~: done.
 5. **Step 7 tuning** against the backfilled data, then **step 8**: lower `review_threshold`, re-classify unreviewed posts so confident ones auto-publish, and go public.
 
