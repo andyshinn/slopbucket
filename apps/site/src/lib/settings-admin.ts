@@ -7,25 +7,43 @@ export interface SettingField {
   label: string;
   help: string;
   kind: FieldKind;
+  /** Shown after a save: what the change applies to, and how to apply it to existing posts. */
+  afterSave: { text: string; link?: { href: string; label: string } };
 }
+
+// What a change needs before it reaches posts already stored. Only the classifier
+// settings need the model again; the rest apply from stored data or the next job.
+const RECLASSIFY: SettingField["afterSave"] = {
+  text: "New posts use it now. Posts already in the queue keep their result until you re-classify them (this calls the model).",
+  link: { href: "/admin/status#jobs-h", label: "Status → Jobs" },
+};
+const NEXT_FETCH: SettingField["afterSave"] = { text: "Applies from the next fetch. Posts already stored stay as they are." };
 
 /** How each setting is edited on /admin/settings, in display order. */
 export const SETTING_FIELDS: SettingField[] = [
-  { key: "review_threshold", label: "Review threshold", help: "Posts at or above this confidence publish automatically. 1 sends everything to review.", kind: "number" },
-  { key: "model_id", label: "Classifier model", help: "Workers AI model ID. Score a model with the Eval workflow before switching.", kind: "text" },
-  { key: "model_reasoning_effort", label: "Reasoning effort", help: "For reasoning models. Empty sends none.", kind: "reasoning" },
-  { key: "categories", label: "Categories", help: 'One per line, lowercase with hyphens. Must include "other".', kind: "lines" },
-  { key: "prefilter_keywords", label: "Pre-filter keywords", help: "One per line. A post needs at least one hit (or a GitHub link, Show HN, or an AI tag on lobste.rs) to be classified.", kind: "lines" },
-  { key: "max_fewshot", label: "Few-shot examples", help: "Most review decisions marked as examples that go into the prompt.", kind: "integer" },
-  { key: "github_topics", label: "GitHub topics", help: "One per line. Repos with any of these topics are searched daily.", kind: "lines" },
-  { key: "github_min_stars", label: "GitHub minimum stars", help: "Repos need at least this many stars to be classified.", kind: "integer" },
+  { key: "review_threshold", label: "Review threshold", help: "Posts at or above this confidence publish automatically. 1 sends everything to review.", kind: "number",
+    afterSave: {
+      text: "New posts use it now. To apply it to the queue from stored confidence (no model calls), use Publish confident posts.",
+      link: { href: "/admin/status#jobs-h", label: "Status → Jobs" },
+    },
+  },
+  { key: "model_id", label: "Classifier model", help: "Workers AI model ID. Score a model with the Eval workflow before switching.", kind: "text", afterSave: RECLASSIFY },
+  { key: "model_reasoning_effort", label: "Reasoning effort", help: "For reasoning models. Empty sends none.", kind: "reasoning", afterSave: RECLASSIFY },
+  { key: "categories", label: "Categories", help: 'One per line, lowercase with hyphens. Must include "other".', kind: "lines", afterSave: RECLASSIFY },
+  { key: "prefilter_keywords", label: "Pre-filter keywords", help: "One per line. A post needs at least one hit (or a GitHub link, Show HN, or an AI tag on lobste.rs) to be classified.", kind: "lines", afterSave: NEXT_FETCH },
+  { key: "max_fewshot", label: "Few-shot examples", help: "Most review decisions marked as examples that go into the prompt.", kind: "integer", afterSave: RECLASSIFY },
+  { key: "github_topics", label: "GitHub topics", help: "One per line. Repos with any of these topics are searched daily.", kind: "lines", afterSave: NEXT_FETCH },
+  { key: "github_min_stars", label: "GitHub minimum stars", help: "Repos need at least this many stars to be classified.", kind: "integer", afterSave: NEXT_FETCH },
   {
     key: "tags",
     label: "Tags",
     help: 'A "# Group | what it means" line starts each group, then one "slug: Label" per line. The classifier may only use these.',
     kind: "taggroups",
+    afterSave: RECLASSIFY,
   },
-  { key: "trending_weights", label: "Trending weights", help: "Source weight, engagement weight, star-growth weight and gravity exponent.", kind: "weights" },
+  { key: "trending_weights", label: "Trending weights", help: "Source weight, engagement weight, star-growth weight and gravity exponent.", kind: "weights",
+    afterSave: { text: "Scores use it at the next daily update, or run it now.", link: { href: "/admin/status#trending-h", label: "Status → Trending" } },
+  },
 ];
 
 // Keep the page in sync with the schema: every setting must have a field.
