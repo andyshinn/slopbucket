@@ -24,8 +24,9 @@ const { base, filters, defaultSort, result, groups, categories, fixedCategory } 
 const f = fixedCategory ? { ...filters, categories: [] } : filters;
 const { tools, total, facets } = result;
 
+const categoryInfo = await Astro.locals.categoryInfo();
 const tagLabels = new Map(groups.flatMap((g) => g.tags.map((t) => [t.slug, t.label] as const)));
-const chips = activeChips(base, f, defaultSort, { category: (c) => categoryStyle(c).label, tag: (t) => tagLabels.get(t) ?? t });
+const chips = activeChips(base, f, defaultSort, { category: (c) => categoryStyle(c, categoryInfo).label, tag: (t) => tagLabels.get(t) ?? t });
 const clearHref = browseHref(base, { ...f, categories: [], tags: [], license: "", stars: 0, langs: [], seen: 0 }, defaultSort);
 const first = total === 0 ? 0 : (f.page - 1) * PAGE_SIZE + 1;
 const last = Math.min(f.page * PAGE_SIZE, total);
@@ -102,7 +103,7 @@ const formProps = { action: base, filters: f, defaultSort, facets, groups, categ
         <nav class="-mx-4 mt-4 flex gap-2 overflow-x-auto px-4 pb-1 lg:hidden" aria-label="Categories">
           <a href={browseHref(base, f, defaultSort, { categories: [] })} class={`${chipClass} shrink-0 ${f.categories.length === 0 ? "bg-lime-400! font-semibold text-lime-950 ring-lime-400!" : ""}`} aria-current={f.categories.length === 0 ? "page" : undefined}>All</a>
           {categories.map((slug) => {
-            const c = categoryStyle(slug);
+            const c = categoryStyle(slug, categoryInfo);
             const active = f.categories.length === 1 && f.categories[0] === slug;
             return (
               <a href={browseHref(base, f, defaultSort, { categories: [slug] })} class={`${chipClass} shrink-0 ${active ? "bg-lime-400! font-semibold text-lime-950 ring-lime-400!" : ""}`} aria-current={active ? "page" : undefined}>

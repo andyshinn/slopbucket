@@ -29,7 +29,6 @@ export const SETTING_FIELDS: SettingField[] = [
   },
   { key: "model_id", label: "Classifier model", help: "Workers AI model ID. Score a model with the Eval workflow before switching.", kind: "text", afterSave: RECLASSIFY },
   { key: "model_reasoning_effort", label: "Reasoning effort", help: "For reasoning models. Empty sends none.", kind: "reasoning", afterSave: RECLASSIFY },
-  { key: "categories", label: "Categories", help: 'One per line, lowercase with hyphens. Must include "other".', kind: "lines", afterSave: RECLASSIFY },
   { key: "prefilter_keywords", label: "Pre-filter keywords", help: "One per line. A post needs at least one hit (or a GitHub link, Show HN, or an AI tag on lobste.rs) to be classified.", kind: "lines", afterSave: NEXT_FETCH },
   { key: "max_fewshot", label: "Few-shot examples", help: "Most review decisions marked as examples that go into the prompt.", kind: "integer", afterSave: RECLASSIFY },
   { key: "github_topics", label: "GitHub topics", help: "One per line. Repos with any of these topics are searched daily.", kind: "lines", afterSave: NEXT_FETCH },
@@ -46,9 +45,12 @@ export const SETTING_FIELDS: SettingField[] = [
   },
 ];
 
-// Keep the page in sync with the schema: every setting must have a field.
+/** Settings edited on /admin/taxonomy instead, since a change there may also rewrite tools and posts. */
+export const TAXONOMY_KEYS: readonly SettingKey[] = ["categories", "category_info"];
+
+// Keep the page in sync with the schema: every setting must have a field or live on the taxonomy page.
 for (const key of SETTING_KEYS) {
-  if (!SETTING_FIELDS.some((f) => f.key === key)) throw new Error(`No admin field for setting ${key}`);
+  if (!SETTING_FIELDS.some((f) => f.key === key) && !TAXONOMY_KEYS.includes(key)) throw new Error(`No admin field for setting ${key}`);
 }
 
 export const REASONING_LEVELS = ["", "none", "low", "medium", "high"] as const;

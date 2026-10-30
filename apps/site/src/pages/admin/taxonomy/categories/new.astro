@@ -1,0 +1,34 @@
+---
+import { env } from "cloudflare:workers";
+import CategoryFields from "../../../../components/CategoryFields.astro";
+import Notice from "../../../../components/Notice.astro";
+import Admin from "../../../../layouts/Admin.astro";
+import { TaxonomyError, addCategory } from "../../../../lib/taxonomy-admin.ts";
+import { btnPrimary, card } from "../../../../lib/ui.ts";
+
+let error: string | null = null;
+let values = { slug: "", label: "", hue: "", hint: "", blurb: "" };
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  values = { slug: "", label: "", hue: "", hint: "", blurb: "", ...Object.fromEntries([...form].map(([k, v]) => [k, String(v)])) };
+  try {
+    const slug = await addCategory(env.DB, form);
+    return Astro.redirect(`/admin/taxonomy?view=categories&done=added#cat-${slug}`, 303);
+  } catch (err) {
+    if (!(err instanceof TaxonomyError)) throw err;
+    error = err.message;
+    Astro.response.status = 422;
+  }
+}
+---
+
+<Admin title="Add category" section="taxonomy">
+  <a href="/admin/taxonomy?view=categories" class="text-sm font-medium text-brand-700">← Categories</a>
+  <h1 class="mt-2 text-lg font-semibold">Add category</h1>
+  <p class="mt-1 text-sm text-stone-600">It goes just above Other. New posts can use it right away; to sort the queue into it, re-classify from Status.</p>
+  <form method="post" class={`${card} mt-4 space-y-4 p-4`}>
+    {error && <Notice tone="error">{error}</Notice>}
+    <CategoryFields values={values} />
+    <button type="submit" class={`${btnPrimary} w-full`}>Add category</button>
+  </form>
+</Admin>

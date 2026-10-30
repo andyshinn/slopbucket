@@ -11,6 +11,8 @@ interface Props {
 }
 const { name, category, githubRepo, class: className = "size-11 rounded-[10px] text-lg" } = Astro.props;
 const owner = repoOwner(githubRepo);
+// Only a monogram tile needs the category color.
+const tile = owner ? "" : categoryStyle(category, await Astro.locals.categoryInfo()).tile;
 const initial = (name.match(/[\p{L}\p{N}]/u)?.[0] ?? "?").toUpperCase();
 ---
 
@@ -18,7 +20,7 @@ const initial = (name.match(/[\p{L}\p{N}]/u)?.[0] ?? "?").toUpperCase();
   owner ? (
     <img src={`/avatar/${owner}`} alt="" width="88" height="88" loading="lazy" class={`${className} shrink-0 bg-stone-100 object-cover dark:bg-stone-800`} />
   ) : (
-    <span class={`${className} flex shrink-0 items-center justify-center font-semibold ${categoryStyle(category).tile}`} aria-hidden="true">
+    <span class={`${className} flex shrink-0 items-center justify-center font-semibold ${tile}`} aria-hidden="true">
       {initial}
     </span>
   )

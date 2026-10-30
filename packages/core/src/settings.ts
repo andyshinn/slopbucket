@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { categoryInfoSchema } from "./categories.ts";
 
 const slug = z.string().regex(/^[a-z0-9-]+$/, "lowercase letters, digits and hyphens");
 
@@ -42,6 +43,8 @@ export const settingSchemas = {
     .min(1)
     .refine((c) => c.includes("other"), { message: 'must include "other"' })
     .refine((c) => new Set(c).size === c.length, { message: "no duplicates" }),
+  // Labels, colors, classifier descriptions and public blurbs, keyed by category slug.
+  category_info: categoryInfoSchema,
   prefilter_keywords: z.array(z.string().min(1)),
   model_id: z.string().min(1),
   // For reasoning models, e.g. "low"; "" sends no reasoning_effort.

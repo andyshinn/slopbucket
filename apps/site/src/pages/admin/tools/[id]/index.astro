@@ -55,9 +55,10 @@ if (Astro.request.method === "POST") {
 }
 
 const showAllPosts = Astro.url.searchParams.get("posts") === "all";
-const [tool, categories, tagGroups, merges, mergedAway] = await Promise.all([
+const [tool, categories, categoryInfo, tagGroups, merges, mergedAway] = await Promise.all([
   getTool(env.DB, id, showAllPosts ? POSTS_ALL : POSTS_DEFAULT),
   getSetting(env.DB, "categories"),
+  Astro.locals.categoryInfo(),
   getSetting(env.DB, "tags"),
   mergeHistory(env.DB, id),
   mergedInto(env.DB, id),
@@ -129,7 +130,7 @@ const description = oneLine(field("description", tool.description));
     <div>
       <label for="category" class={label}>Category</label>
       <select id="category" name="category" class={`${input} mt-1`}>
-        {categories.map((c) => <option value={c} selected={c === field("category", tool.category)}>{categoryDisplay(c).label}</option>)}
+        {categories.map((c) => <option value={c} selected={c === field("category", tool.category)}>{categoryDisplay(c, categoryInfo).label}</option>)}
       </select>
     </div>
     <fieldset>

@@ -23,9 +23,10 @@ export async function runClassifyJob(job: ClassifyJob, deps: Deps): Promise<void
   // Already routed (e.g. a redelivered message): nothing to do.
   if (!post || post.status !== "pending") return;
 
-  const [threshold, categories, model, reasoningEffort, maxFewShot, tags] = await Promise.all([
+  const [threshold, categories, categoryInfo, model, reasoningEffort, maxFewShot, tags] = await Promise.all([
     getSetting(db, "review_threshold"),
     getSetting(db, "categories"),
+    getSetting(db, "category_info"),
     getSetting(db, "model_id"),
     getSetting(db, "model_reasoning_effort"),
     getSetting(db, "max_fewshot"),
@@ -46,7 +47,7 @@ export async function runClassifyJob(job: ClassifyJob, deps: Deps): Promise<void
   // its canonical owner/repo URL with the launch post but needs its own type and version.
   // Only reuses a result from the same classifier setup (model, reasoning, prompt and
   // categories), and never for forced jobs (re-classify), which always call the model.
-  const classifier = await classifierFingerprint(model, reasoningEffort, categories, tags);
+  const classifier = await classifierFingerprint(model, reasoningEffort, categories, categoryInfo, tags);
   if (!classification && !job.force) {
     const twin = await db
       .prepare(
@@ -63,7 +64,7 @@ export async function runClassifyJob(job: ClassifyJob, deps: Deps): Promise<void
   if (!classification) {
     const text = await getArticleText(post, deps);
     const fewShot = await loadFewShot(db, maxFewShot, categories, tags);
-    const result = await classifyPost({ model, categories, tags, post, text, fewShot, reasoningEffort: reasoningEffort || undefined }, deps.ai);
+    const result = await classifyPost({ model, categories, categoryInfo, tags, post, text, fewShot, reasoningEffort: reasoningEffort || undefined }, deps.ai);
     if (!result.ok) {
       await db
         .prepare("UPDATE posts SET status = 'queued', raw_output = ? WHERE id = ?")

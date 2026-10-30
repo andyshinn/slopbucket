@@ -9,7 +9,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { tagGroupsSchema } from "@slop-bucket/core";
+import { categoryInfoSchema, tagGroupsSchema } from "@slop-bucket/core";
 import { classifyPost } from "../src/classifier.ts";
 import { getArticleText } from "../src/content.ts";
 import type { Deps, RunModel } from "../src/deps.ts";
@@ -60,6 +60,7 @@ async function productionSetting(key: string): Promise<unknown> {
 }
 const model = args.model ?? String(await productionSetting("model_id"));
 const categories = args.categories ? args.categories.split(",").map((c) => c.trim()) : ((await productionSetting("categories")) as string[]);
+const categoryInfo = categoryInfoSchema.parse(await productionSetting("category_info"));
 const tags = tagGroupsSchema.parse(args.tags ? JSON.parse(readFileSync(resolve(args.tags), "utf8")) : await productionSetting("tags"));
 
 let neurons = 0;
@@ -128,7 +129,7 @@ await Promise.all(
       const t0 = Date.now();
       try {
         const r = await classifyPost(
-          { model, categories, tags, post: item, text: await text(item), fewShot: [], reasoningEffort: args.reasoning },
+          { model, categories, categoryInfo, tags, post: item, text: await text(item), fewShot: [], reasoningEffort: args.reasoning },
           ai,
         );
         const c = r.ok ? r.value : null;

@@ -16,7 +16,7 @@ if ("redirect" in found) return Astro.redirect(found.redirect, 301);
 const { tool, posts, firstPost } = found;
 const tagGroups = await getSetting(env.DB, "tags");
 
-const category = categoryStyle(tool.category);
+const category = categoryStyle(tool.category, await Astro.locals.categoryInfo());
 const tagLabels = new Map(tagGroups.flatMap((g) => g.tags.map((t) => [t.slug, t.label] as const)));
 const tags = tool.tags.filter((t) => tagLabels.has(t));
 const homepage = safeHref(tool.homepage_url);
