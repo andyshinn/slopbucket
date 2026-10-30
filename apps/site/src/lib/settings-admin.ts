@@ -1,4 +1,4 @@
-import { SETTING_KEYS, type SettingKey, type TagGroups, settingSchemas } from "@slop-bucket/core";
+import { PUBLISHABLE_QUEUED_SQL, SETTING_KEYS, type SettingKey, type TagGroups, autoPublishes, settingSchemas } from "@slop-bucket/core";
 
 export type FieldKind = "number" | "integer" | "text" | "lines" | "weights" | "reasoning" | "taggroups";
 
@@ -133,9 +133,9 @@ export interface ThresholdBucket {
   posts: number;
   /** Of those, posts in "other", which never auto-publish. */
   other: number;
-  /** Of those, posts that would auto-publish at the current threshold. */
+  /** Of those, posts Publish confident posts would publish at the current threshold. */
   publishNow: number;
-  /** Queued posts that would auto-publish at a threshold of `from`. */
+  /** Queued posts Publish confident posts would publish at a threshold of `from`. */
   publishAt: number;
 }
 
@@ -144,44 +144,47 @@ export interface ThresholdHistogram {
   buckets: ThresholdBucket[];
   /** Queued posts without a score (invalid model output); they always stay in review. */
   noScore: number;
+  /** Scored posts, not "other", that it never publishes: already reviewed, or a category since removed. */
+  held: number;
   queued: number;
-  /** Queued posts that would auto-publish at the current threshold. */
+  /** Queued posts Publish confident posts would publish at the current threshold. */
   publishAtCurrent: number;
 }
 
 /**
- * Would a post auto-publish at this threshold? The same rule as the classifier's
- * routing (apps/ingest/src/classify-job.ts): below a threshold of 1, at or above it, not "other".
+ * Queued posts by stored confidence, in 0.1 buckets, with how many Publish confident
+ * posts would publish at each threshold (the same posts and rule as PUBLISH_CONFIDENT_SQL).
  */
-export function wouldPublish(confidence: number, category: string | null, threshold: number): boolean {
-  return threshold < 1 && confidence >= threshold && category !== "other";
-}
-
-/** Queued posts by stored confidence, in 0.1 buckets, with how many each threshold would publish. */
 export async function thresholdHistogram(db: D1Database, threshold: number): Promise<ThresholdHistogram> {
-  // Grouped by exact score so the comparisons run in JS, exactly as the classifier makes them.
+  // Grouped by exact score so the threshold comparison runs in autoPublishes(), as the classifier makes it.
   const { results } = await db
     .prepare(
-      `SELECT confidence, json_extract(classification, '$.category') AS category, count(*) AS n
-       FROM posts WHERE status = 'queued' GROUP BY 1, 2`,
+      `SELECT confidence, json_extract(classification, '$.category') AS category, (${PUBLISHABLE_QUEUED_SQL}) AS eligible, count(*) AS n
+       FROM posts WHERE status = 'queued' GROUP BY 1, 2, 3`,
     )
-    .all<{ confidence: number | null; category: string | null; n: number }>();
+    .all<{ confidence: number | null; category: string | null; eligible: 0 | 1; n: number }>();
   const scored = results.filter((r): r is typeof r & { confidence: number } => r.confidence !== null);
-  const publishable = (t: number) => scored.reduce((sum, r) => sum + (wouldPublish(r.confidence, r.category, t) ? r.n : 0), 0);
+  const sum = (rows: typeof scored, keep: (r: (typeof scored)[number]) => boolean = () => true) => rows.reduce((n, r) => n + (keep(r) ? r.n : 0), 0);
+  const publishes = (t: number) => (r: (typeof scored)[number]) => r.eligible === 1 && autoPublishes(t, r.confidence, r.category ?? "");
   const buckets = Array.from({ length: 10 }, (_, i) => {
     const from = (9 - i) / 10;
     const to = (10 - i) / 10; // the top bucket has no upper edge, so it holds 1.0
     const inBucket = scored.filter((r) => r.confidence >= from && (i === 0 || r.confidence < to));
     return {
       from,
-      posts: inBucket.reduce((sum, r) => sum + r.n, 0),
-      other: inBucket.reduce((sum, r) => sum + (r.category === "other" ? r.n : 0), 0),
-      publishNow: inBucket.reduce((sum, r) => sum + (wouldPublish(r.confidence, r.category, threshold) ? r.n : 0), 0),
-      publishAt: publishable(from),
+      posts: sum(inBucket),
+      other: sum(inBucket, (r) => r.category === "other"),
+      publishNow: sum(inBucket, publishes(threshold)),
+      publishAt: sum(scored, publishes(from)),
     };
   });
-  const noScore = results.reduce((sum, r) => sum + (r.confidence === null ? r.n : 0), 0);
-  return { buckets, noScore, queued: results.reduce((sum, r) => sum + r.n, 0), publishAtCurrent: publishable(threshold) };
+  return {
+    buckets,
+    noScore: results.reduce((n, r) => n + (r.confidence === null ? r.n : 0), 0),
+    held: sum(scored, (r) => r.eligible !== 1 && r.category !== "other"),
+    queued: results.reduce((n, r) => n + r.n, 0),
+    publishAtCurrent: sum(scored, publishes(threshold)),
+  };
 }
 
 /** Validates with the same schema the Worker uses, then saves. */

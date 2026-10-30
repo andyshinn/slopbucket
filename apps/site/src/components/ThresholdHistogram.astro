@@ -1,14 +1,14 @@
 ---
-// Queued posts by confidence, under the review threshold on Settings: what a new threshold would publish. No JS.
+// Queued posts by confidence, under the review threshold on Settings: what Publish confident posts would publish at each threshold. No JS.
 import type { ThresholdHistogram } from "../lib/settings-admin.ts";
-import { num } from "../lib/ui.ts";
+import { accentLink, num } from "../lib/ui.ts";
 
 interface Props {
   histogram: ThresholdHistogram;
   threshold: number;
 }
 const { histogram, threshold } = Astro.props;
-const { buckets, noScore, queued, publishAtCurrent } = histogram;
+const { buckets, noScore, held, queued, publishAtCurrent } = histogram;
 const widest = Math.max(1, ...buckets.map((b) => b.posts));
 const other = buckets.reduce((sum, b) => sum + b.other, 0);
 const pct = (n: number) => `${(n / widest) * 100}%`;
@@ -23,7 +23,7 @@ const h3 = "font-mono text-xs font-bold tracking-widest text-stone-500 uppercase
       threshold < 1 ? (
         <>
           <span class="font-mono text-2xl font-bold tracking-tight text-stone-900 tabular-nums">{num(publishAtCurrent)}</span> of {num(queued)} queued
-          posts are at or above {threshold}.
+          posts would publish at {threshold}.
         </>
       ) : (
         <>At 1, nothing publishes automatically. {num(queued)} posts are queued.</>
@@ -86,8 +86,9 @@ const h3 = "font-mono text-xs font-bold tracking-widest text-stone-500 uppercase
   }
 
   <p class="mt-3 text-xs text-stone-500">
-    "Publish at low end" is how many queued posts would publish with the threshold set to the bottom of that row (0.8 for 0.8–0.9).{" "}
-    {num(other)} in "other" and {num(noScore)} without a score (invalid model output) always stay in review. Counts use the stored scores; saving a threshold
-    only affects posts classified after it.
+    "Publish at low end" is how many queued posts would publish with the threshold set to the bottom of that row (0.8 for 0.8–0.9). Saving a threshold
+    applies to new posts; to publish the lime part of the queue from stored scores (no model calls), use Publish confident posts on{" "}
+    <a href="/admin/status#jobs-h" class={accentLink}>Status → Jobs</a>. These always stay in review: {num(other)} in "other", {num(held)} already reviewed
+    or in a category since removed (gray), and {num(noScore)} without a score (invalid model output, not shown).
   </p>
 </section>

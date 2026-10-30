@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
-import { getSetting } from "@slop-bucket/core";
+import { getSetting, publishConfidentPreview } from "@slop-bucket/core";
 import { describe, expect, it } from "vitest";
-import { SETTING_FIELDS, SettingError, formatTagGroups, loadSettings, saveSetting, suggestedTags, thresholdHistogram, wouldPublish } from "../src/lib/settings-admin.ts";
+import { SETTING_FIELDS, SettingError, formatTagGroups, loadSettings, saveSetting, suggestedTags, thresholdHistogram } from "../src/lib/settings-admin.ts";
 
 const db = env.DB;
 const form = (entries: Record<string, string>) => {
@@ -92,50 +92,59 @@ describe("tags setting", () => {
 });
 
 describe("thresholdHistogram", () => {
-  it("buckets queued posts by score and counts what each threshold would publish", async () => {
+  it("buckets queued posts by score and counts what Publish confident posts would publish", async () => {
+    await db.prepare("DELETE FROM review_decisions").run();
     await db.prepare("DELETE FROM posts").run();
-    const rows: [number | null, string, string][] = [
-      [1, "cli", "queued"],
-      [0.95, "agent", "queued"],
-      [0.9, "other", "queued"], // never auto-publishes
-      [0.85, "cli", "queued"],
-      [0.8, "cli", "queued"], // the bucket's low edge belongs to it
-      [0.8, "ide", "queued"],
-      [0.3, "cli", "queued"],
-      [null, "cli", "queued"], // invalid model output
-      [0.99, "cli", "published"], // not in the queue
+    await db.prepare("DELETE FROM tools").run();
+    const tool = await db.prepare("INSERT INTO tools (slug, name, status, first_seen_at) VALUES ('t', 'T', 'queued', '2026-10-01T00:00:00Z') RETURNING id").first<{ id: number }>();
+    const rows: [number | null, string, string, number | null][] = [
+      [1, "cli", "queued", tool!.id],
+      [0.95, "agent", "queued", tool!.id],
+      [0.9, "other", "queued", tool!.id], // never auto-publishes
+      [0.85, "cli", "queued", tool!.id],
+      [0.8, "cli", "queued", tool!.id], // the bucket's low edge belongs to it
+      [0.8, "ide", "queued", tool!.id],
+      [0.3, "cli", "queued", tool!.id],
+      [null, "cli", "queued", tool!.id], // invalid model output
+      [0.99, "cli", "published", tool!.id], // not in the queue
+      [0.97, "cli", "queued", tool!.id], // reviewed below, so held
+      [0.96, "retired", "queued", tool!.id], // category no longer in the list, so held
     ];
-    await db.batch(
-      rows.map(([confidence, category, status], i) =>
+    const ids = await db.batch(
+      rows.map(([confidence, category, status, toolId], i) =>
         db
           .prepare(
-            `INSERT INTO posts (source, external_id, url, canonical_url, title, posted_at, status, confidence, classification)
-             VALUES ('hn', ?, 'u', 'u', 't', '2026-10-01T00:00:00Z', ?, ?, ?)`,
+            `INSERT INTO posts (source, external_id, url, canonical_url, title, posted_at, status, confidence, classification, tool_id)
+             VALUES ('hn', ?, 'u', 'u', 't', '2026-10-01T00:00:00Z', ?, ?, ?, ?) RETURNING id`,
           )
-          .bind(`h${i}`, status, confidence, JSON.stringify({ category })),
+          .bind(`h${i}`, status, confidence, JSON.stringify({ category }), toolId),
       ),
     );
+    const reviewedId = (ids[9]?.results[0] as { id: number }).id;
+    await db.prepare("INSERT INTO review_decisions (post_id, decision) VALUES (?, 'approved')").bind(reviewedId).run();
 
     const h = await thresholdHistogram(db, 0.85);
-    expect(h.queued).toBe(8);
+    expect(h.queued).toBe(10);
     expect(h.noScore).toBe(1);
+    expect(h.held).toBe(2);
     expect(h.publishAtCurrent).toBe(3);
     const at = (from: number) => h.buckets.find((b) => b.from === from);
     expect(h.buckets.map((b) => b.from)).toEqual([0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0]);
-    expect(at(0.9)).toEqual({ from: 0.9, posts: 3, other: 1, publishNow: 2, publishAt: 2 });
+    expect(at(0.9)).toEqual({ from: 0.9, posts: 5, other: 1, publishNow: 2, publishAt: 2 });
     expect(at(0.8)).toEqual({ from: 0.8, posts: 3, other: 0, publishNow: 1, publishAt: 5 });
     expect(at(0.7)).toEqual({ from: 0.7, posts: 0, other: 0, publishNow: 0, publishAt: 5 });
     expect(at(0.3)).toEqual({ from: 0.3, posts: 1, other: 0, publishNow: 0, publishAt: 6 });
     expect(at(0)?.publishAt).toBe(6);
-
     expect((await thresholdHistogram(db, 1)).publishAtCurrent).toBe(0);
-    await db.prepare("DELETE FROM posts").run();
-  });
 
-  it("matches the classifier's publish rule", () => {
-    expect(wouldPublish(0.9, "cli", 0.9)).toBe(true);
-    expect(wouldPublish(0.89, "cli", 0.9)).toBe(false);
-    expect(wouldPublish(1, "cli", 1)).toBe(false);
-    expect(wouldPublish(1, "other", 0)).toBe(false);
+    // The headline matches what the Publish confident posts confirmation will say.
+    for (const t of [0.85, 0.8, 0.3, 0]) {
+      await saveSetting(db, "review_threshold", form({ value: String(t) }));
+      expect((await thresholdHistogram(db, t)).publishAtCurrent).toBe((await publishConfidentPreview(db)).posts);
+    }
+    await saveSetting(db, "review_threshold", form({ value: "1" }));
+    await db.prepare("DELETE FROM review_decisions").run();
+    await db.prepare("DELETE FROM posts").run();
+    await db.prepare("DELETE FROM tools").run();
   });
 });
