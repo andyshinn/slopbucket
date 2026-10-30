@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aboutDuration, githubHref, num, safeHref, shortDuration } from "../src/lib/ui.ts";
+import { aboutDuration, confidenceChip, githubHref, num, safeHref, shortDuration } from "../src/lib/ui.ts";
 import { buildInfo } from "../src/lib/version.ts";
 
 describe("link helpers", () => {
@@ -15,6 +15,16 @@ describe("link helpers", () => {
     expect(githubHref("acme/patch work")).toBeNull();
     expect(githubHref("https://evil.example/x")).toBeNull();
     expect(githubHref(null)).toBeNull();
+  });
+});
+
+describe("confidenceChip", () => {
+  it("rounds to a percent and colors by band", () => {
+    expect(confidenceChip(0.9)).toEqual({ text: "90%", class: "bg-emerald-50 text-emerald-700" });
+    expect(confidenceChip(0.7).class).toContain("amber");
+    expect(confidenceChip(0.694).text).toBe("69%");
+    expect(confidenceChip(0.69).class).toContain("red");
+    expect(confidenceChip(null).text).toBe("no score");
   });
 });
 

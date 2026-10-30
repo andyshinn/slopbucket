@@ -6,13 +6,17 @@ import {
   editPost,
   getQueueItem,
   isNewTool,
+  listQueue,
   nextQueuedId,
   parseEditForm,
+  parseQueueFilters,
   queueCount,
+  queueFilterQuery,
   reassignPost,
   rejectPost,
   searchTools,
   tagChips,
+  withFilters,
 } from "../src/lib/review.ts";
 
 const db = env.DB;
@@ -75,6 +79,80 @@ describe("queue navigation", () => {
     const item = await getQueueItem(db, id);
     expect(item?.tool).toMatchObject({ id: t, name: "Patchwork", posts: 1 });
     expect(item?.classification?.tool_name).toBe("Patchwork");
+  });
+});
+
+describe("queue filters", () => {
+  const filters = (q: string) => parseQueueFilters(new URLSearchParams(q));
+  /** A queued post from `source` with `confidence` (null: no score). */
+  async function queued(toolId: number, source: string, confidence: number | null): Promise<number> {
+    const id = await post(toolId);
+    await db.prepare("UPDATE posts SET source = ?, confidence = ? WHERE id = ?").bind(source, confidence, id).run();
+    return id;
+  }
+
+  it("parses the URL, drops unknown values and writes back only non-defaults", () => {
+    expect(filters("source=github&band=mid&order=lowest")).toEqual({ source: "github", band: "mid", order: "lowest" });
+    expect(filters("source=reddit&band=x&order=random")).toEqual({ source: "", band: "", order: "oldest" });
+    expect(queueFilterQuery(filters("source=&band=&order=oldest"))).toBe("");
+    expect(queueFilterQuery(filters("order=newest&source=hn"))).toBe("source=hn&order=newest");
+    expect(withFilters("/admin/queue?after=3", filters("band=high"))).toBe("/admin/queue?after=3&band=high");
+    expect(withFilters("/admin/queue/3", filters(""))).toBe("/admin/queue/3");
+  });
+
+  it("filters by source and confidence band; no score counts as low", async () => {
+    const t = await tool("Patchwork");
+    const hi = await queued(t, "hn", 0.95);
+    const mid = await queued(t, "github", 0.8);
+    const low = await queued(t, "hn", 0.5);
+    const none = await queued(t, "lobsters", null);
+    await post(t, classification({ confidence: 0.95 }), "published");
+    expect(await queueCount(db, filters("source=hn"))).toBe(2);
+    expect((await listQueue(db, filters("band=high"))).map((q) => q.id)).toEqual([hi]);
+    expect((await listQueue(db, filters("band=mid"))).map((q) => q.id)).toEqual([mid]);
+    expect((await listQueue(db, filters("band=low"))).map((q) => q.id)).toEqual([low, none]);
+    expect((await listQueue(db, filters("source=hn&band=low"))).map((q) => q.id)).toEqual([low]);
+  });
+
+  it("orders the list and walks it in that order, wrapping around", async () => {
+    const t = await tool("Patchwork");
+    const a = await queued(t, "hn", 0.9);
+    const b = await queued(t, "hn", null);
+    const c = await queued(t, "hn", 0.6);
+    const d = await queued(t, "hn", 0.6);
+    const lowest = filters("order=lowest");
+    expect((await listQueue(db, lowest)).map((q) => q.id)).toEqual([b, c, d, a]);
+    expect(await nextQueuedId(db, b, lowest)).toBe(c);
+    expect(await nextQueuedId(db, c, lowest)).toBe(d); // ties break by id
+    expect(await nextQueuedId(db, a, lowest)).toBe(b);
+    const newest = filters("order=newest");
+    expect(await nextQueuedId(db, 0, newest)).toBe(d);
+    expect(await nextQueuedId(db, c, newest)).toBe(b);
+  });
+
+  it("finds the next post after one that was just reviewed, within the filters", async () => {
+    const t = await tool("Patchwork");
+    const a = await queued(t, "hn", 0.7);
+    await queued(t, "github", 0.75);
+    const c = await queued(t, "hn", 0.8);
+    await rejectPost(db, a, false);
+    expect(await nextQueuedId(db, a, filters("source=hn&order=lowest"))).toBe(c);
+    expect(await nextQueuedId(db, 0, filters("source=producthunt"))).toBeNull();
+  });
+
+  it("names each post's tool and marks new tools", async () => {
+    const solo = await tool("Solo");
+    const busy = await tool("Busy", { status: "published" });
+    const s = await post(solo);
+    await post(busy, classification(), "published");
+    const b = await post(busy);
+    const orphan = await post(null, null);
+    const list = await listQueue(db, filters(""));
+    expect(list.map((q) => [q.id, q.tool_name, q.new_tool])).toEqual([
+      [s, "Solo", 1],
+      [b, "Busy", 0],
+      [orphan, null, 0],
+    ]);
   });
 });
 

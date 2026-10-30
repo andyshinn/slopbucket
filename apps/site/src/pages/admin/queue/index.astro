@@ -1,19 +1,39 @@
 ---
 import { env } from "cloudflare:workers";
 import Icon from "../../../components/Icon.astro";
+import QueueHeader from "../../../components/QueueHeader.astro";
 import Admin from "../../../layouts/Admin.astro";
-import { nextQueuedId } from "../../../lib/review.ts";
+import { nextQueuedId, parseQueueFilters, queueCount, withFilters } from "../../../lib/review.ts";
+import { accentLink } from "../../../lib/ui.ts";
 
-// Entry point and "next item" redirect: /admin/queue?after=<id> goes to the next queued post.
+// Entry point and "next item" redirect: /admin/queue?after=<id> goes to the next queued post
+// in the filters' order (source, band, order; see parseQueueFilters).
 const after = Number(Astro.url.searchParams.get("after") ?? 0) || 0;
-const next = await nextQueuedId(env.DB, after);
-if (next !== null) return Astro.redirect(`/admin/queue/${next}`, 302);
+const filters = parseQueueFilters(Astro.url.searchParams);
+const next = await nextQueuedId(env.DB, after, filters);
+if (next !== null) return Astro.redirect(withFilters(`/admin/queue/${next}`, filters), 302);
+const total = await queueCount(env.DB);
 ---
 
-<Admin title="Review queue" section="queue">
+<Admin title="Review queue" section="queue" full>
+  <QueueHeader filters={filters} matching={0} total={total} />
   <div class="mt-16 text-center">
-    <Icon name="check" class="mx-auto size-12 text-emerald-600" />
-    <h1 class="mt-4 text-xl font-semibold">Queue is empty</h1>
-    <p class="mt-2 text-stone-600">Nothing is waiting for review.</p>
+    {
+      total > 0 ? (
+        <>
+          <Icon name="magnifyingGlass" class="mx-auto size-12 text-stone-400" />
+          <h2 class="mt-4 text-xl font-semibold">Nothing matches these filters</h2>
+          <p class="mt-2 text-stone-600">
+            {total} {total === 1 ? "post is" : "posts are"} waiting. <a href="/admin/queue" class={accentLink}>Show all</a>
+          </p>
+        </>
+      ) : (
+        <>
+          <Icon name="check" class="mx-auto size-12 text-emerald-600" />
+          <h2 class="mt-4 text-xl font-semibold">Queue is empty</h2>
+          <p class="mt-2 text-stone-600">Nothing is waiting for review.</p>
+        </>
+      )
+    }
   </div>
 </Admin>

@@ -1,0 +1,41 @@
+---
+// The queue's title row. From `lg` up it is a bar across the split view with
+// the filter form (GET, so the filters live in the URL; no JS, hence Apply).
+import { CONFIDENCE_BANDS, QUEUE_ORDERS, QUEUE_SOURCES, type QueueFilters } from "../lib/review.ts";
+import { SOURCE_LABELS, btnSecondary, num } from "../lib/ui.ts";
+
+interface Props {
+  filters: QueueFilters;
+  /** Queued posts matching the filters. */
+  matching: number;
+  /** All queued posts. */
+  total: number;
+}
+const { filters, matching, total } = Astro.props;
+const filtered = filters.source !== "" || filters.band !== "";
+const select = "h-11 rounded-lg bg-white px-2 text-sm text-stone-900 outline-1 -outline-offset-1 outline-stone-300 focus:outline-2 focus:-outline-offset-2 focus:outline-lime-600";
+---
+
+<div class="mb-3 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-2 lg:mb-0 lg:items-center lg:justify-start lg:border-b lg:border-stone-200 lg:bg-white lg:px-6 lg:py-3">
+  <h1 class="text-lg font-semibold lg:text-xl lg:font-bold lg:tracking-tight">Review queue</h1>
+  <span class="text-sm text-stone-500 lg:font-mono lg:text-xs">
+    {filtered ? `${num(matching)} of ${num(total)} waiting` : `${num(total)} waiting`}
+  </span>
+  <form method="get" action="/admin/queue" class="ml-auto hidden flex-wrap items-center gap-2 lg:flex" aria-label="Filter the queue">
+    <label for="qf-source" class="sr-only">Source</label>
+    <select id="qf-source" name="source" class={select}>
+      <option value="">All sources</option>
+      {QUEUE_SOURCES.map((s) => <option value={s} selected={filters.source === s}>{SOURCE_LABELS[s]}</option>)}
+    </select>
+    <label for="qf-band" class="sr-only">Confidence</label>
+    <select id="qf-band" name="band" class={select}>
+      <option value="">Any confidence</option>
+      {Object.entries(CONFIDENCE_BANDS).map(([value, text]) => <option value={value} selected={filters.band === value}>{text}</option>)}
+    </select>
+    <label for="qf-order" class="sr-only">Order</label>
+    <select id="qf-order" name="order" class={select}>
+      {Object.entries(QUEUE_ORDERS).map(([value, text]) => <option value={value} selected={filters.order === value}>{text}</option>)}
+    </select>
+    <button type="submit" class={btnSecondary}>Apply</button>
+  </form>
+</div>

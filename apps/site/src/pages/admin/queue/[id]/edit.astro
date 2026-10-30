@@ -3,11 +3,14 @@ import { env } from "cloudflare:workers";
 import { POST_TYPES, getSetting } from "@slop-bucket/core";
 import Notice from "../../../../components/Notice.astro";
 import Admin from "../../../../layouts/Admin.astro";
-import { ReviewError, editPost, getQueueItem, parseEditForm } from "../../../../lib/review.ts";
+import { ReviewError, editPost, getQueueItem, parseEditForm, parseQueueFilters, withFilters } from "../../../../lib/review.ts";
 import { btnPrimary, btnSecondary, card, input, label } from "../../../../lib/ui.ts";
 
 const id = Number(Astro.params.id);
 if (!Number.isInteger(id) || id <= 0) return Astro.redirect("/admin/queue", 302);
+// The queue filters this came with, kept for the next post and the way back.
+const filters = parseQueueFilters(Astro.url.searchParams);
+const back = withFilters(`/admin/queue/${id}`, filters);
 
 let error: string | null = null;
 let submitted: Record<string, unknown> | null = null;
@@ -18,7 +21,7 @@ if (Astro.request.method === "POST") {
   useInPrompt = form.get("use_in_prompt") === "on";
   try {
     await editPost(env.DB, id, submitted, useInPrompt);
-    return Astro.redirect(`/admin/queue?after=${id}`, 303);
+    return Astro.redirect(withFilters(`/admin/queue?after=${id}`, filters), 303);
   } catch (err) {
     if (!(err instanceof ReviewError)) throw err;
     error = err.message;
@@ -27,7 +30,7 @@ if (Astro.request.method === "POST") {
 }
 
 const item = await getQueueItem(env.DB, id);
-if (!item || item.post.status !== "queued") return Astro.redirect(`/admin/queue/${id}`, 302);
+if (!item || item.post.status !== "queued") return Astro.redirect(back, 302);
 const [categories, tagGroups] = await Promise.all([getSetting(env.DB, "categories"), getSetting(env.DB, "tags")]);
 // Re-show what was submitted after an error; otherwise start from the model's output.
 const v: Record<string, unknown> = submitted ?? item.classification ?? { is_ai_dev_tool: true, post_type: "launch", category: "other" };
@@ -37,7 +40,7 @@ const suggested = Array.isArray(v.suggested_tags) ? v.suggested_tags.map(String)
 ---
 
 <Admin title="Edit post" section="queue">
-  <a href={`/admin/queue/${id}`} class="text-sm font-medium text-brand-700">← Back to post</a>
+  <a href={back} class="text-sm font-medium text-brand-700">← Back to post</a>
   <h1 class="mt-2 text-lg font-semibold">Edit and approve</h1>
   <p class="mt-1 text-sm text-stone-600 break-words">{item.post.title}</p>
 
@@ -128,7 +131,7 @@ const suggested = Array.isArray(v.suggested_tags) ? v.suggested_tags.map(String)
     </label>
 
     <div class="grid grid-cols-2 gap-3">
-      <a href={`/admin/queue/${id}`} class={btnSecondary}>Cancel</a>
+      <a href={back} class={btnSecondary}>Cancel</a>
       <button type="submit" class={btnPrimary}>Save</button>
     </div>
     <p class="text-xs text-stone-500">Saving approves the post, or rejects it if you marked it out of scope or as a roundup.</p>
