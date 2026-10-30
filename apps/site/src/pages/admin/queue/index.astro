@@ -3,7 +3,7 @@ import { env } from "cloudflare:workers";
 import Icon from "../../../components/Icon.astro";
 import QueueHeader from "../../../components/QueueHeader.astro";
 import Admin from "../../../layouts/Admin.astro";
-import { nextQueuedId, parseQueueFilters, queueCount, withFilters } from "../../../lib/review.ts";
+import { nextQueuedId, parseQueueFilters, queueCounts, withFilters } from "../../../lib/review.ts";
 import { accentLink } from "../../../lib/ui.ts";
 
 // Entry point and "next item" redirect: /admin/queue?after=<id> goes to the next queued post
@@ -12,7 +12,7 @@ const after = Number(Astro.url.searchParams.get("after") ?? 0) || 0;
 const filters = parseQueueFilters(Astro.url.searchParams);
 const next = await nextQueuedId(env.DB, after, filters);
 if (next !== null) return Astro.redirect(withFilters(`/admin/queue/${next}`, filters), 302);
-const total = await queueCount(env.DB);
+const { total } = await queueCounts(env.DB);
 ---
 
 <Admin title="Review queue" section="queue" full>

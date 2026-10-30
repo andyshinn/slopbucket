@@ -4,18 +4,19 @@ import { env } from "cloudflare:workers";
 import Icon from "../../../../components/Icon.astro";
 import Notice from "../../../../components/Notice.astro";
 import QueueHeader from "../../../../components/QueueHeader.astro";
+import ReviewActions from "../../../../components/ReviewActions.astro";
 import Admin from "../../../../layouts/Admin.astro";
 import {
-  ReviewError, approvePost, getQueueItem, isNewTool, listQueue, parseQueueFilters, queueCount, readArticleText, rejectPost, tagChips, withFilters,
+  ReviewError, approvePost, getQueueItem, isNewTool, listQueue, parseQueueFilters, queueCounts, readArticleText, rejectPost, tagChips, withFilters,
 } from "../../../../lib/review.ts";
 import {
-  SOURCE_ABBRS, SOURCE_LABELS, accentFill, accentLink, btnApprove, btnReject, btnSecondary, card, confidenceChip, githubHref, hostname, num, safeHref, timeAgo,
+  SOURCE_ABBRS, SOURCE_LABELS, accentFill, accentLink, card, confidenceChip, githubHref, hostname, num, safeHref, timeAgo,
 } from "../../../../lib/ui.ts";
 
-const id = Number(Astro.params.id);
-if (!Number.isInteger(id) || id <= 0) return Astro.redirect("/admin/queue", 302);
-// The desktop list's filters; they carry over to the next post, Edit and Move.
+// The queue filters; they carry over to the next post, Edit and Move.
 const filters = parseQueueFilters(Astro.url.searchParams);
+const id = Number(Astro.params.id);
+if (!Number.isInteger(id) || id <= 0) return Astro.redirect(withFilters("/admin/queue", filters), 302);
 
 let error: string | null = null;
 if (Astro.request.method === "POST") {
@@ -35,11 +36,12 @@ if (Astro.request.method === "POST") {
 }
 
 const item = await getQueueItem(env.DB, id);
-if (!item) return Astro.redirect("/admin/queue", 302);
+if (!item) return Astro.redirect(withFilters("/admin/queue", filters), 302);
 const { post, classification: c, tool } = item;
-const [total, matching, list, text, tagGroups] = await Promise.all([
-  queueCount(env.DB),
-  queueCount(env.DB, filters),
+// Phones get the list too though they hide it: one indexed query of at most 50 rows,
+// and telling phones apart reliably would need client hints or JavaScript.
+const [{ total, matching }, list, text, tagGroups] = await Promise.all([
+  queueCounts(env.DB, filters),
   listQueue(env.DB, filters),
   readArticleText(env.ARTICLES, id),
   getSetting(env.DB, "tags"),
@@ -133,44 +135,8 @@ try {
             <p class="mt-1 truncate text-sm text-stone-500">{hostname(post.url)}</p>
           </div>
 
-          {/* Desktop actions, top right in a wide pane, under the title otherwise. Phones use the buttons under the card and the bottom bar. */}
-          {
-            queued && (
-              <div class="mt-4 hidden shrink-0 flex-col items-start gap-2.5 lg:flex @2xl:mt-0 @2xl:items-end">
-                <div class="flex gap-2">
-                  <a href={editHref} class={btnSecondary}>
-                    <Icon name="pencil" class="size-5 text-stone-500" /> Edit
-                  </a>
-                  <a href={moveHref} class={btnSecondary}>
-                    <Icon name="arrowsRightLeft" class="size-5 text-stone-500" /> Move
-                  </a>
-                  <form method="post">
-                    <button type="submit" name="action" value="skip" class={btnSecondary}>
-                      <Icon name="forward" class="size-5 text-stone-500" /> Skip
-                    </button>
-                  </form>
-                </div>
-                <form method="post" class="flex flex-col items-start gap-2.5 @2xl:items-end">
-                  <div class="flex gap-2">
-                    <button type="submit" name="action" value="reject" class={btnReject}>
-                      <Icon name="xMark" /> Reject
-                    </button>
-                    <button type="submit" name="action" value="approve" class={btnApprove} disabled={!tool}>
-                      <Icon name="check" /> Approve
-                    </button>
-                  </div>
-                  {c ? (
-                    <label class="flex min-h-11 items-center gap-2 text-sm text-stone-700">
-                      <input type="checkbox" name="use_in_prompt" class="size-5 rounded border-stone-300 accent-brand-600" />
-                      Use as a few-shot example
-                    </label>
-                  ) : (
-                    <p class="text-sm text-stone-500">To use this as an example, fill it in with Edit.</p>
-                  )}
-                </form>
-              </div>
-            )
-          }
+          {/* Desktop actions: top right in a wide pane, under the title otherwise. */}
+          {queued && <ReviewActions layout="desktop" editHref={editHref} moveHref={moveHref} canApprove={!!tool} canBeExample={!!c} />}
         </div>
 
         {/* Two columns once the pane is wide enough: the classification, then the extracted text. */}
@@ -265,70 +231,21 @@ try {
             }
           </div>
 
-          <section class="mt-4 hidden lg:block" aria-labelledby="extracted-text">
-            <h3 id="extracted-text" class="font-mono text-xs tracking-widest text-stone-500 uppercase">
-              Extracted text{text && ` · ${num(text.length)} characters`}
-            </h3>
+          {/* One <details>: collapsed on phones, always open from lg up (forced through ::details-content). */}
+          <details class="mt-4 lg:details-content:[content-visibility:visible]">
+            <summary class="flex min-h-11 cursor-pointer items-center text-sm font-medium text-brand-700 lg:min-h-0 lg:cursor-auto lg:font-mono lg:text-xs lg:font-normal lg:tracking-widest lg:text-stone-500 lg:uppercase">
+              {text ? `Extracted text · ${num(text.length)} characters` : "No extracted text"}
+            </summary>
             {
-              textPreview ? (
-                <p tabindex="0" class="mt-2 max-h-[32rem] overflow-y-auto rounded-lg bg-stone-50 p-3 text-sm whitespace-pre-wrap text-stone-700 focus-visible:outline-2 focus-visible:outline-lime-600">{textPreview}</p>
-              ) : (
-                <p class="mt-2 text-sm text-stone-500">No extracted text.</p>
+              textPreview && (
+                <p tabindex="0" class="mt-2 max-h-96 overflow-y-auto text-sm whitespace-pre-wrap text-stone-700 focus-visible:outline-2 focus-visible:outline-lime-600 lg:max-h-[32rem] lg:rounded-lg lg:bg-stone-50 lg:p-3">{textPreview}</p>
               )
             }
-          </section>
+          </details>
         </div>
-
-        <details class="group mt-4 lg:hidden">
-          <summary class="flex min-h-11 cursor-pointer items-center text-sm font-medium text-brand-700">
-            {text ? `Extracted text (${text.length.toLocaleString()} characters)` : "No extracted text"}
-          </summary>
-          {textPreview && <p class="mt-2 max-h-96 overflow-y-auto text-sm whitespace-pre-wrap text-stone-700">{textPreview}</p>}
-        </details>
       </article>
+
+      {queued && <ReviewActions layout="phone" editHref={editHref} moveHref={moveHref} canApprove={!!tool} canBeExample={!!c} />}
     </div>
   </div>
-
-  {
-    queued && (
-      <div class="mt-4 grid grid-cols-3 gap-2 lg:hidden">
-        <a href={editHref} class={btnSecondary}>
-          <Icon name="pencil" class="size-5 text-stone-500" /> Edit
-        </a>
-        <a href={moveHref} class={btnSecondary}>
-          <Icon name="arrowsRightLeft" class="size-5 text-stone-500" /> Move
-        </a>
-        <form method="post">
-          <button type="submit" name="action" value="skip" class={`${btnSecondary} w-full`}>
-            <Icon name="forward" class="size-5 text-stone-500" /> Skip
-          </button>
-        </form>
-      </div>
-    )
-  }
-
-  {
-    queued && (
-      <form method="post" class="fixed inset-x-0 bottom-0 z-10 border-t border-stone-200 bg-white/95 backdrop-blur lg:hidden">
-        <div class="mx-auto max-w-2xl px-4 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-          {c ? (
-            <label class="flex min-h-11 items-center gap-3 text-sm text-stone-700">
-              <input type="checkbox" name="use_in_prompt" class="size-5 rounded border-stone-300 accent-brand-600" />
-              Use as a few-shot example
-            </label>
-          ) : (
-            <p class="flex min-h-11 items-center text-sm text-stone-500">To use this as an example, fill it in with Edit.</p>
-          )}
-          <div class="grid grid-cols-2 gap-3">
-            <button type="submit" name="action" value="reject" class={`${btnReject} min-h-14`}>
-              <Icon name="xMark" /> Reject
-            </button>
-            <button type="submit" name="action" value="approve" class={`${btnApprove} min-h-14`} disabled={!tool}>
-              <Icon name="check" /> Approve
-            </button>
-          </div>
-        </div>
-      </form>
-    )
-  }
 </Admin>

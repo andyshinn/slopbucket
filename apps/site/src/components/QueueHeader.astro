@@ -1,7 +1,10 @@
 ---
-// The queue's title row. From `lg` up it is a bar across the split view with
-// the filter form (GET, so the filters live in the URL; no JS, hence Apply).
-import { CONFIDENCE_BANDS, QUEUE_ORDERS, QUEUE_SOURCES, type QueueFilters } from "../lib/review.ts";
+// The queue's title row and filter form (GET, so the filters live in the URL;
+// no JS, hence Apply). From `lg` up it is a bar across the split view with the
+// filters inline; on phones the same form folds into a <details> whose summary
+// names the active filters. One form for both, forced open on desktop through
+// ::details-content.
+import { BAND_KEYS, CONFIDENCE_BANDS, ORDER_KEYS, QUEUE_ORDERS, QUEUE_SOURCES, type QueueFilters } from "../lib/review.ts";
 import { SOURCE_LABELS, btnSecondary, num } from "../lib/ui.ts";
 
 interface Props {
@@ -13,7 +16,13 @@ interface Props {
 }
 const { filters, matching, total } = Astro.props;
 const filtered = filters.source !== "" || filters.band !== "";
-const select = "h-11 rounded-lg bg-white px-2 text-sm text-stone-900 outline-1 -outline-offset-1 outline-stone-300 focus:outline-2 focus:-outline-offset-2 focus:outline-lime-600";
+const active = [
+  filters.source && SOURCE_LABELS[filters.source],
+  filters.band && CONFIDENCE_BANDS[filters.band],
+  filters.order !== "oldest" && QUEUE_ORDERS[filters.order],
+].filter(Boolean);
+const select = "h-11 w-full rounded-lg bg-white px-2 text-base text-stone-900 outline-1 -outline-offset-1 outline-stone-300 focus:outline-2 focus:-outline-offset-2 focus:outline-lime-600 lg:w-auto lg:text-sm";
+const fieldLabel = "text-sm font-medium text-stone-900 lg:sr-only";
 ---
 
 <div class="mb-3 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-2 lg:mb-0 lg:items-center lg:justify-start lg:border-b lg:border-stone-200 lg:bg-white lg:px-6 lg:py-3">
@@ -21,21 +30,35 @@ const select = "h-11 rounded-lg bg-white px-2 text-sm text-stone-900 outline-1 -
   <span class="text-sm text-stone-500 lg:font-mono lg:text-xs">
     {filtered ? `${num(matching)} of ${num(total)} waiting` : `${num(total)} waiting`}
   </span>
-  <form method="get" action="/admin/queue" class="ml-auto hidden flex-wrap items-center gap-2 lg:flex" aria-label="Filter the queue">
-    <label for="qf-source" class="sr-only">Source</label>
-    <select id="qf-source" name="source" class={select}>
-      <option value="">All sources</option>
-      {QUEUE_SOURCES.map((s) => <option value={s} selected={filters.source === s}>{SOURCE_LABELS[s]}</option>)}
-    </select>
-    <label for="qf-band" class="sr-only">Confidence</label>
-    <select id="qf-band" name="band" class={select}>
-      <option value="">Any confidence</option>
-      {Object.entries(CONFIDENCE_BANDS).map(([value, text]) => <option value={value} selected={filters.band === value}>{text}</option>)}
-    </select>
-    <label for="qf-order" class="sr-only">Order</label>
-    <select id="qf-order" name="order" class={select}>
-      {Object.entries(QUEUE_ORDERS).map(([value, text]) => <option value={value} selected={filters.order === value}>{text}</option>)}
-    </select>
-    <button type="submit" class={btnSecondary}>Apply</button>
-  </form>
+  <details class="w-full lg:ml-auto lg:w-auto lg:details-content:[content-visibility:visible]">
+    <summary class="flex min-h-11 cursor-pointer items-center text-sm font-medium text-lime-700 lg:hidden">
+      {active.length ? `Filters: ${active.join(" · ")}` : "Filter and sort"}
+    </summary>
+    <form method="get" action="/admin/queue" class="grid gap-3 pt-1 pb-2 lg:flex lg:flex-wrap lg:items-center lg:gap-2 lg:p-0" aria-label="Filter the queue">
+      <div class="grid gap-1 lg:block">
+        <label for="qf-source" class={fieldLabel}>Source</label>
+        <select id="qf-source" name="source" class={select}>
+          <option value="">All sources</option>
+          {QUEUE_SOURCES.map((s) => <option value={s} selected={filters.source === s}>{SOURCE_LABELS[s]}</option>)}
+        </select>
+      </div>
+      <div class="grid gap-1 lg:block">
+        <label for="qf-band" class={fieldLabel}>Confidence</label>
+        <select id="qf-band" name="band" class={select}>
+          <option value="">Any confidence</option>
+          {BAND_KEYS.map((b) => <option value={b} selected={filters.band === b}>{CONFIDENCE_BANDS[b]}</option>)}
+        </select>
+      </div>
+      <div class="grid gap-1 lg:block">
+        <label for="qf-order" class={fieldLabel}>Order</label>
+        <select id="qf-order" name="order" class={select}>
+          {ORDER_KEYS.map((o) => <option value={o} selected={filters.order === o}>{QUEUE_ORDERS[o]}</option>)}
+        </select>
+      </div>
+      <div class="flex gap-2">
+        <button type="submit" class={`${btnSecondary} flex-1 lg:flex-none`}>Apply</button>
+        {active.length > 0 && <a href="/admin/queue" class={`${btnSecondary} flex-1 lg:flex-none`}>Clear</a>}
+      </div>
+    </form>
+  </details>
 </div>
