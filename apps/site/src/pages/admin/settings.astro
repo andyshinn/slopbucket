@@ -51,14 +51,24 @@ function shown(key: string, name = "value"): string {
 
 <Admin title="Settings" section="settings">
   <h1 class="text-lg font-semibold">Settings</h1>
-  <p class="mt-1 text-sm text-stone-600">Changes apply to the next job; no deploy needed.</p>
+  <p class="mt-1 text-sm text-stone-600">Changes apply to the next job; no deploy needed. Saving one says how to apply it to posts already stored.</p>
 
   <div class="mt-4 space-y-4">
     {
       SETTING_FIELDS.map((f) => (
         <form method="post" id={f.key} class={`${card} scroll-mt-28 p-4`}>
           <input type="hidden" name="key" value={f.key} />
-          {saved === f.key && <Notice>Saved.</Notice>}
+          {saved === f.key && (
+            <Notice>
+              Saved. {f.afterSave.text}
+              {f.afterSave.link && (
+                <>
+                  {" "}
+                  <a href={f.afterSave.link.href} class="font-semibold underline">{f.afterSave.link.label}</a>
+                </>
+              )}
+            </Notice>
+          )}
           {failed?.key === f.key && <Notice tone="error">{failed.message}</Notice>}
 
           {f.kind === "weights" ? (

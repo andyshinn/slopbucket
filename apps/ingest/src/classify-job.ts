@@ -1,4 +1,4 @@
-import { type Classification, type ClassifyJob, type TagGroups, classificationSchema, getSetting, resolveTool, tagSlugs } from "@slop-bucket/core";
+import { type Classification, type ClassifyJob, type TagGroups, autoPublishes, classificationSchema, getSetting, resolveTool, tagSlugs } from "@slop-bucket/core";
 import { type FewShotExample, classifierFingerprint, classifyPost } from "./classifier.ts";
 import { getArticleText } from "./content.ts";
 import type { Deps } from "./deps.ts";
@@ -101,8 +101,7 @@ async function route(db: D1Database, post: PostRow, c: Classification, threshold
   }
 
   const toolId = await resolveTool(db, c, post);
-  // A threshold of 1 means everything is reviewed, even confidence 1.0.
-  const publish = threshold < 1 && c.confidence >= threshold && c.category !== "other";
+  const publish = autoPublishes(threshold, c.confidence, c.category);
   const status = publish ? "published" : "queued";
   await db.batch([
     db
