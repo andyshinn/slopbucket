@@ -21,6 +21,17 @@ export const toolStatusChip: Record<ToolStatus, string> = {
 export const card = "rounded-xl bg-white shadow-xs ring-1 ring-stone-200";
 
 export const SOURCE_LABELS: Record<string, string> = { hn: "Hacker News", lobsters: "lobste.rs", github: "GitHub", producthunt: "Product Hunt" };
+/** Short source badges for dense lists, as on the public rows. */
+export const SOURCE_ABBRS: Record<string, string> = { hn: "HN", lobsters: "LOB", github: "GH", producthunt: "PH" };
+
+/** A classifier confidence as a chip: text and colors (90%+ green, 70%+ amber, below red, none stone). */
+export function confidenceChip(confidence: number | null): { text: string; class: string } {
+  if (confidence === null) return { text: "no score", class: "bg-stone-100 text-stone-700" };
+  const text = `${Math.round(confidence * 100)}%`;
+  if (confidence >= 0.9) return { text, class: "bg-emerald-50 text-emerald-700" };
+  if (confidence >= 0.7) return { text, class: "bg-amber-50 text-amber-800" };
+  return { text, class: "bg-red-50 text-red-700" };
+}
 
 export function timeAgo(iso: string, now = Date.now()): string {
   const minutes = Math.round((now - Date.parse(iso)) / 60_000);

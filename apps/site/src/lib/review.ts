@@ -32,20 +32,148 @@ export interface QueueItem {
 const TOOL_SUMMARY = `SELECT t.id, t.name, t.slug, t.status, t.category,
   (SELECT count(*) FROM posts p WHERE p.tool_id = t.id) AS posts FROM tools t`;
 
-export async function queueCount(db: D1Database): Promise<number> {
-  const row = await db.prepare("SELECT count(*) AS n FROM posts WHERE status = 'queued'").first<{ n: number }>();
-  return row?.n ?? 0;
+// Queue filters, from the filter bar (a bar on desktop, a collapsed panel on
+// phones). They ride along in the URL (list links, Edit, Move, and the redirect
+// after a decision).
+export const QUEUE_SOURCES = ["hn", "lobsters", "github", "producthunt"] as const;
+export const CONFIDENCE_BANDS = { high: "90% and up", mid: "70–89%", low: "Under 70% or no score" } as const;
+export const QUEUE_ORDERS = { oldest: "Oldest first", newest: "Newest first", lowest: "Lowest confidence first" } as const;
+export type ConfidenceBand = keyof typeof CONFIDENCE_BANDS;
+export type QueueOrder = keyof typeof QUEUE_ORDERS;
+export const BAND_KEYS = Object.keys(CONFIDENCE_BANDS) as ConfidenceBand[];
+export const ORDER_KEYS = Object.keys(QUEUE_ORDERS) as QueueOrder[];
+
+export interface QueueFilters {
+  /** "" for every source. */
+  source: (typeof QUEUE_SOURCES)[number] | "";
+  /** "" for any confidence. */
+  band: ConfidenceBand | "";
+  order: QueueOrder;
 }
 
-/** The next queued post after `afterId`, wrapping to the oldest; null when the queue is empty. */
-export async function nextQueuedId(db: D1Database, afterId = 0): Promise<number | null> {
-  const next = await db
-    .prepare("SELECT id FROM posts WHERE status = 'queued' AND id > ? ORDER BY id LIMIT 1")
-    .bind(afterId)
-    .first<{ id: number }>();
-  if (next) return next.id;
-  const first = await db.prepare("SELECT id FROM posts WHERE status = 'queued' ORDER BY id LIMIT 1").first<{ id: number }>();
+const DEFAULT_QUEUE_FILTERS: QueueFilters = { source: "", band: "", order: "oldest" };
+
+const oneOf = <T extends string>(value: string | null, allowed: readonly T[]): T | undefined =>
+  allowed.find((a) => a === value);
+
+/** Filters from the URL; unknown values fall back to the defaults (no filter, oldest first). */
+export function parseQueueFilters(params: URLSearchParams): QueueFilters {
+  return {
+    source: oneOf(params.get("source"), QUEUE_SOURCES) ?? DEFAULT_QUEUE_FILTERS.source,
+    band: oneOf(params.get("band"), BAND_KEYS) ?? DEFAULT_QUEUE_FILTERS.band,
+    order: oneOf(params.get("order"), ORDER_KEYS) ?? DEFAULT_QUEUE_FILTERS.order,
+  };
+}
+
+/** The filters as a query string without defaults ("" when none apply), to append to queue links. */
+export function queueFilterQuery(f: QueueFilters): string {
+  const q = new URLSearchParams();
+  if (f.source !== DEFAULT_QUEUE_FILTERS.source) q.set("source", f.source);
+  if (f.band !== DEFAULT_QUEUE_FILTERS.band) q.set("band", f.band);
+  if (f.order !== DEFAULT_QUEUE_FILTERS.order) q.set("order", f.order);
+  return q.toString();
+}
+
+/** `path` with the filter query appended. */
+export const withFilters = (path: string, f: QueueFilters): string => {
+  const q = queueFilterQuery(f);
+  return q ? `${path}${path.includes("?") ? "&" : "?"}${q}` : path;
+};
+
+const BAND_SQL: Record<ConfidenceBand, string> = {
+  high: "p.confidence >= 0.9",
+  mid: "p.confidence >= 0.7 AND p.confidence < 0.9",
+  low: "(p.confidence IS NULL OR p.confidence < 0.7)",
+};
+// Sort key (for a table alias) and direction; id breaks ties so every order is total (needed for "next after").
+const ORDER_SQL: Record<QueueOrder, { key: (alias: string) => string; dir: "ASC" | "DESC" }> = {
+  oldest: { key: (a) => `${a}.id`, dir: "ASC" },
+  newest: { key: (a) => `${a}.id`, dir: "DESC" },
+  lowest: { key: (a) => `coalesce(${a}.confidence, -1)`, dir: "ASC" },
+};
+
+/** The filters as conditions on posts `p` ("1" when none apply), not counting the queued status. */
+function filterSql(f: QueueFilters): { sql: string; binds: unknown[] } {
+  const parts: string[] = [];
+  const binds: unknown[] = [];
+  if (f.source) {
+    parts.push("p.source = ?");
+    binds.push(f.source);
+  }
+  if (f.band) parts.push(BAND_SQL[f.band]);
+  return { sql: parts.length ? parts.join(" AND ") : "1", binds };
+}
+
+function queueWhere(f: QueueFilters): { where: string; binds: unknown[] } {
+  const { sql, binds } = filterSql(f);
+  return { where: `p.status = 'queued' AND ${sql}`, binds };
+}
+
+const orderBy = (f: QueueFilters) => {
+  const { key, dir } = ORDER_SQL[f.order];
+  return `ORDER BY ${key("p")} ${dir}, p.id ${dir}`;
+};
+
+/** All queued posts, and those matching the filters, in one query. */
+export async function queueCounts(db: D1Database, f: QueueFilters = DEFAULT_QUEUE_FILTERS): Promise<{ total: number; matching: number }> {
+  const { sql, binds } = filterSql(f);
+  const row = await db
+    .prepare(`SELECT count(*) AS total, count(CASE WHEN ${sql} THEN 1 END) AS matching FROM posts p WHERE p.status = 'queued'`)
+    .bind(...binds)
+    .first<{ total: number; matching: number }>();
+  return { total: row?.total ?? 0, matching: row?.matching ?? 0 };
+}
+
+/**
+ * The next queued post after `afterId` in the filters' order, wrapping to the
+ * first; null when nothing matches. `afterId` may be a post that was just
+ * reviewed: its sort key is read from the row, whatever its status now. If the
+ * row is gone, the comparison is NULL and this falls through to the first.
+ */
+export async function nextQueuedId(db: D1Database, afterId = 0, f: QueueFilters = DEFAULT_QUEUE_FILTERS): Promise<number | null> {
+  const { where, binds } = queueWhere(f);
+  const { key, dir } = ORDER_SQL[f.order];
+  if (afterId > 0) {
+    const next = await db
+      .prepare(
+        `SELECT p.id FROM posts p WHERE ${where}
+         AND (${key("p")}, p.id) ${dir === "ASC" ? ">" : "<"} (SELECT ${key("cur")}, cur.id FROM posts cur WHERE cur.id = ?)
+         ${orderBy(f)} LIMIT 1`,
+      )
+      .bind(...binds, afterId)
+      .first<{ id: number }>();
+    if (next) return next.id;
+  }
+  const first = await db.prepare(`SELECT p.id FROM posts p WHERE ${where} ${orderBy(f)} LIMIT 1`).bind(...binds).first<{ id: number }>();
   return first?.id ?? null;
+}
+
+export interface QueueListItem {
+  id: number;
+  source: string;
+  title: string;
+  posted_at: string;
+  confidence: number | null;
+  tool_name: string | null;
+  /** Same test as isNewTool: the only post of a still-queued tool. */
+  new_tool: 0 | 1;
+}
+
+export const QUEUE_LIST_SIZE = 50;
+
+/** The first queued posts in the filters' order, for the desktop list. */
+export async function listQueue(db: D1Database, f: QueueFilters, limit = QUEUE_LIST_SIZE): Promise<QueueListItem[]> {
+  const { where, binds } = queueWhere(f);
+  const { results } = await db
+    .prepare(
+      `SELECT p.id, p.source, p.title, p.posted_at, p.confidence, t.name AS tool_name,
+         coalesce(t.status = 'queued' AND (SELECT count(*) FROM posts p2 WHERE p2.tool_id = t.id) <= 1, 0) AS new_tool
+       FROM posts p LEFT JOIN tools t ON t.id = p.tool_id
+       WHERE ${where} ${orderBy(f)} LIMIT ?`,
+    )
+    .bind(...binds, limit)
+    .all<QueueListItem>();
+  return results;
 }
 
 export async function getQueueItem(db: D1Database, id: number): Promise<QueueItem | null> {

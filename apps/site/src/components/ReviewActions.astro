@@ -1,0 +1,76 @@
+---
+// A queued post's actions: Edit, Move and Skip, then Reject and Approve with the
+// few-shot checkbox. One markup for both layouts; the queue page places it twice:
+// "desktop" top right of the post (lg and up), "phone" under the card with
+// Reject and Approve in a fixed bottom bar (below lg). Forms post to the page's
+// own URL, so the queue filters in it carry over.
+import { btnApprove, btnReject, btnSecondary } from "../lib/ui.ts";
+import Icon from "./Icon.astro";
+
+interface Props {
+  layout: "desktop" | "phone";
+  editHref: string;
+  moveHref: string;
+  /** False when the post has no tool yet, so it can't be approved. */
+  canApprove: boolean;
+  /** False when the model left no classification, so it can't be a few-shot example yet. */
+  canBeExample: boolean;
+}
+const { layout, editHref, moveHref, canApprove, canBeExample } = Astro.props;
+const desktop = layout === "desktop";
+const cls = desktop
+  ? {
+      wrap: "mt-4 hidden shrink-0 flex-col items-start gap-2.5 lg:flex @2xl:mt-0 @2xl:items-end",
+      top: "flex gap-2",
+      form: "flex flex-col items-start gap-2.5 @2xl:items-end",
+      inner: "contents",
+      decide: "order-first flex gap-2",
+      decideBtn: "",
+    }
+  : {
+      wrap: "lg:hidden",
+      top: "mt-4 grid grid-cols-3 gap-2",
+      form: "fixed inset-x-0 bottom-0 z-10 border-t border-stone-200 bg-white/95 backdrop-blur",
+      inner: "mx-auto max-w-2xl px-4 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]",
+      decide: "grid grid-cols-2 gap-3",
+      decideBtn: "min-h-14",
+    };
+---
+
+<div class={cls.wrap}>
+  <div class={cls.top}>
+    <a href={editHref} class={btnSecondary}>
+      <Icon name="pencil" class="size-5 text-stone-500" /> Edit
+    </a>
+    <a href={moveHref} class={btnSecondary}>
+      <Icon name="arrowsRightLeft" class="size-5 text-stone-500" /> Move
+    </a>
+    <form method="post">
+      <button type="submit" name="action" value="skip" class={`${btnSecondary} w-full`}>
+        <Icon name="forward" class="size-5 text-stone-500" /> Skip
+      </button>
+    </form>
+  </div>
+  <form method="post" class={cls.form}>
+    <div class={cls.inner}>
+      {
+        canBeExample ? (
+          <label class="flex min-h-11 items-center gap-3 text-sm text-stone-700">
+            <input type="checkbox" name="use_in_prompt" class="size-5 rounded border-stone-300 accent-brand-600" />
+            Use as a few-shot example
+          </label>
+        ) : (
+          <p class="flex min-h-11 items-center text-sm text-stone-500">To use this as an example, fill it in with Edit.</p>
+        )
+      }
+      <div class={cls.decide}>
+        <button type="submit" name="action" value="reject" class={`${btnReject} ${cls.decideBtn}`}>
+          <Icon name="xMark" /> Reject
+        </button>
+        <button type="submit" name="action" value="approve" class={`${btnApprove} ${cls.decideBtn}`} disabled={!canApprove}>
+          <Icon name="check" /> Approve
+        </button>
+      </div>
+    </div>
+  </form>
+</div>

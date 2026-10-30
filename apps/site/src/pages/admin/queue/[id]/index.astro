@@ -3,12 +3,20 @@ import { getSetting } from "@slop-bucket/core";
 import { env } from "cloudflare:workers";
 import Icon from "../../../../components/Icon.astro";
 import Notice from "../../../../components/Notice.astro";
+import QueueHeader from "../../../../components/QueueHeader.astro";
+import ReviewActions from "../../../../components/ReviewActions.astro";
 import Admin from "../../../../layouts/Admin.astro";
-import { ReviewError, approvePost, getQueueItem, isNewTool, queueCount, readArticleText, rejectPost, tagChips } from "../../../../lib/review.ts";
-import { SOURCE_LABELS, accentFill, accentLink, btnApprove, btnReject, btnSecondary, card, githubHref, hostname, safeHref, timeAgo } from "../../../../lib/ui.ts";
+import {
+  ReviewError, approvePost, getQueueItem, isNewTool, listQueue, parseQueueFilters, queueCounts, readArticleText, rejectPost, tagChips, withFilters,
+} from "../../../../lib/review.ts";
+import {
+  SOURCE_ABBRS, SOURCE_LABELS, accentFill, accentLink, card, confidenceChip, githubHref, hostname, num, safeHref, timeAgo,
+} from "../../../../lib/ui.ts";
 
+// The queue filters; they carry over to the next post, Edit and Move.
+const filters = parseQueueFilters(Astro.url.searchParams);
 const id = Number(Astro.params.id);
-if (!Number.isInteger(id) || id <= 0) return Astro.redirect("/admin/queue", 302);
+if (!Number.isInteger(id) || id <= 0) return Astro.redirect(withFilters("/admin/queue", filters), 302);
 
 let error: string | null = null;
 if (Astro.request.method === "POST") {
@@ -19,7 +27,7 @@ if (Astro.request.method === "POST") {
     if (action === "approve") await approvePost(env.DB, id, useInPrompt);
     else if (action === "reject") await rejectPost(env.DB, id, useInPrompt);
     else if (action !== "skip") throw new ReviewError("Unknown action.");
-    return Astro.redirect(`/admin/queue?after=${id}`, 303);
+    return Astro.redirect(withFilters(`/admin/queue?after=${id}`, filters), 303);
   } catch (err) {
     if (!(err instanceof ReviewError)) throw err;
     error = err.message;
@@ -28,15 +36,23 @@ if (Astro.request.method === "POST") {
 }
 
 const item = await getQueueItem(env.DB, id);
-if (!item) return Astro.redirect("/admin/queue", 302);
+if (!item) return Astro.redirect(withFilters("/admin/queue", filters), 302);
 const { post, classification: c, tool } = item;
-const [remaining, text, tagGroups] = await Promise.all([queueCount(env.DB), readArticleText(env.ARTICLES, id), getSetting(env.DB, "tags")]);
+// Phones get the list too though they hide it: one indexed query of at most 50 rows,
+// and telling phones apart reliably would need client hints or JavaScript.
+const [{ total, matching }, list, text, tagGroups] = await Promise.all([
+  queueCounts(env.DB, filters),
+  listQueue(env.DB, filters),
+  readArticleText(env.ARTICLES, id),
+  getSetting(env.DB, "tags"),
+]);
 const tags = tagChips(c?.tags, tagGroups);
 const struck = tags.some((t) => !t.known);
 const queued = post.status === "queued";
-const confidence = post.confidence;
-const confidenceStyle =
-  confidence === null ? "bg-stone-100 text-stone-700" : confidence >= 0.9 ? "bg-emerald-50 text-emerald-700" : confidence >= 0.7 ? "bg-amber-50 text-amber-800" : "bg-red-50 text-red-700";
+const confidence = confidenceChip(post.confidence);
+const editHref = withFilters(`/admin/queue/${id}/edit`, filters);
+const moveHref = withFilters(`/admin/queue/${id}/reassign`, filters);
+const textPreview = text?.slice(0, 6000);
 
 const fmt = (v: unknown) => (v === null || v === undefined || v === "" ? "—" : Array.isArray(v) ? v.join(", ") || "—" : String(v));
 // [label, value, optional link]
@@ -61,168 +77,175 @@ try {
 }
 ---
 
-<Admin title="Review queue" section="queue">
-  <div class="mb-3 flex items-baseline justify-between">
-    <h1 class="text-lg font-semibold">Review queue</h1>
-    <span class="text-sm text-stone-500">{remaining} waiting</span>
-  </div>
+<Admin title="Review queue" section="queue" full>
+  <QueueHeader filters={filters} matching={matching} total={total} />
 
-  {error && <Notice tone="error">{error}</Notice>}
-  {!queued && <Notice>This post is already {post.status}.</Notice>}
+  <div class="lg:flex lg:items-start">
+    {/* Desktop: the queued posts matching the filters, beside the post. */}
+    <nav aria-label="Queued posts" class="hidden w-80 shrink-0 border-r border-stone-200 bg-white lg:sticky lg:top-0 lg:block lg:h-screen lg:overflow-y-auto xl:w-90">
+      {list.length === 0 && <p class="p-4 text-sm text-stone-500">No queued posts match these filters.</p>}
+      <ul>
+        {list.map((q) => {
+          const current = q.id === id;
+          const chip = confidenceChip(q.confidence);
+          return (
+            <li>
+              <a
+                href={withFilters(`/admin/queue/${q.id}`, filters)}
+                aria-current={current ? "page" : undefined}
+                class={`flex flex-col gap-1.5 border-b border-stone-200 px-3.5 py-3 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-lime-600 ${current ? "bg-lime-50 outline-1 -outline-offset-1 outline-lime-200" : "hover:bg-stone-50"}`}
+              >
+                <span class="line-clamp-2 text-sm/5 font-semibold break-words">{q.title}</span>
+                <span class="flex items-center gap-2 text-xs text-stone-500">
+                  <abbr title={SOURCE_LABELS[q.source] ?? q.source} class="rounded border border-stone-300 px-1 font-mono text-[10px] font-bold text-stone-600 no-underline">
+                    {SOURCE_ABBRS[q.source] ?? q.source}
+                  </abbr>
+                  <span class="min-w-0 flex-1 truncate">{q.tool_name ?? "No tool"}{q.new_tool ? " · new" : ""}</span>
+                  <span class="shrink-0">{timeAgo(q.posted_at)}</span>
+                  <span class={`shrink-0 rounded px-1.5 font-mono font-bold ${chip.class}`}>{chip.text}</span>
+                </span>
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+      {matching > list.length && <p class="px-3.5 py-3 font-mono text-xs text-stone-500">First {list.length} of {num(matching)}</p>}
+    </nav>
 
-  <article class={`${card} p-4`}>
-    <div class="flex flex-wrap items-center gap-2 text-sm text-stone-500">
-      <span class="rounded-md bg-stone-100 px-2 py-0.5 font-medium text-stone-700">{SOURCE_LABELS[post.source] ?? post.source}</span>
-      <span>{timeAgo(post.posted_at)}</span>
-      {post.author && <span>by {post.author}</span>}
-      <span class={`ml-auto rounded-md px-2 py-0.5 font-medium ${confidenceStyle}`}>
-        {confidence === null ? "no score" : `${Math.round(confidence * 100)}%`}
-      </span>
-    </div>
-    <h2 class="mt-3 text-lg leading-snug font-semibold break-words">
-      <a href={post.url} target="_blank" rel="noopener noreferrer" class="hover:underline">
-        {post.title}
-        <Icon name="arrowTopRight" class="mb-0.5 inline size-4 text-stone-400" />
-      </a>
-    </h2>
-    <p class="mt-1 truncate text-sm text-stone-500">{hostname(post.url)}</p>
+    <div class="min-w-0 flex-1 lg:px-7 lg:pt-5">
+      {error && <Notice tone="error">{error}</Notice>}
+      {!queued && <Notice>This post is already {post.status}.</Notice>}
 
-    <section class="mt-4 rounded-lg bg-stone-50 p-3 text-sm" aria-labelledby="resolves-to">
-      <h3 id="resolves-to" class="font-mono text-xs tracking-widest text-stone-500 uppercase">Resolves to</h3>
-      {
-        !tool ? (
-          <p class="mt-1 text-stone-600">No tool assigned. Use Edit to name it.</p>
-        ) : isNewTool(tool) ? (
-          <>
-            <p class="mt-1 flex flex-wrap items-center gap-2">
-              <span class={`rounded-md px-2 py-0.5 text-xs font-semibold ${accentFill}`}>New tool</span>
-              <a href={`/admin/tools/${tool.id}`} class="font-semibold hover:underline">{tool.name}</a>
-            </p>
-            <p class="mt-1 text-stone-600">This is the tool's only post, so approving it publishes the tool.</p>
-          </>
-        ) : (
-          <p class="mt-1">
-            <a href={`/admin/tools/${tool.id}`} class="font-semibold hover:underline">{tool.name}</a>{" "}
-            <span class="text-stone-500">
-              · {tool.posts} {tool.posts === 1 ? "post" : "posts"} · {tool.status}
-            </span>
-          </p>
-        )
-      }
-    </section>
-
-    {typeof c?.reason === "string" && c.reason && (
-      <figure class="mt-4">
-        <figcaption class="font-mono text-xs tracking-widest text-stone-500 uppercase">Model's reason</figcaption>
-        <blockquote class="mt-1 text-sm text-stone-800">{c.reason}</blockquote>
-      </figure>
-    )}
-
-    {
-      tags.length > 0 && (
-        <div class="mt-4">
-          <p class="font-mono text-xs tracking-widest text-stone-500 uppercase">Tags</p>
-          <ul class="mt-1 flex flex-wrap gap-1.5">
-            {tags.map((t) =>
-              t.known ? (
-                <li class="rounded-md bg-stone-100 px-2 py-0.5 text-sm text-stone-700">{t.label}</li>
-              ) : (
-                <li class="rounded-md px-2 py-0.5 font-mono text-sm text-stone-500 line-through ring-1 ring-stone-200 ring-inset">
-                  <span class="sr-only">Not in your tag list: </span>
-                  {t.slug}
-                </li>
-              ),
-            )}
-          </ul>
-          {struck && (
-            <p class="mt-2 text-sm text-stone-600">
-              Struck tags aren't in your tag list. Saving with Edit drops them.{" "}
-              <a href="/admin/settings#tags" class={accentLink}>Edit tag list</a>
-            </p>
-          )}
-        </div>
-      )
-    }
-
-    {
-      rows.length > 0 && (
-        <dl class="mt-4 divide-y divide-stone-100 text-sm">
-          {rows.map(([k, v, href]) => (
-            <div class="grid grid-cols-3 gap-3 py-2">
-              <dt class="text-stone-500">{k}</dt>
-              <dd class="col-span-2 break-words text-stone-900">
-                {href ? (
-                  <a href={href} target="_blank" rel="noopener noreferrer" class="font-medium text-brand-700 underline decoration-brand-100 underline-offset-2 hover:decoration-brand-600">
-                    {fmt(v)}
-                    <Icon name="arrowTopRight" class="mb-0.5 ml-0.5 inline size-4" />
-                  </a>
-                ) : (
-                  fmt(v)
-                )}
-              </dd>
+      {/* A size container: the header row and the two columns below follow the pane's width, not the window's. */}
+      <article class={`${card} @container p-4 lg:p-5`}>
+        <div class="@2xl:flex @2xl:items-start @2xl:gap-6">
+          <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-2 text-sm text-stone-500">
+              <span class="rounded-md bg-stone-100 px-2 py-0.5 font-medium text-stone-700">{SOURCE_LABELS[post.source] ?? post.source}</span>
+              <span>{timeAgo(post.posted_at)}</span>
+              {post.author && <span>by {post.author}</span>}
+              <span class={`ml-auto rounded-md px-2 py-0.5 font-medium lg:ml-0 ${confidence.class}`}>{confidence.text}</span>
             </div>
-          ))}
-        </dl>
-      )
-    }
-
-    {
-      raw && (
-        <div class="mt-4">
-          <p class="text-sm font-medium text-red-700">The model's output was invalid{raw.error ? `: ${raw.error}` : ""}</p>
-          <pre class="mt-2 overflow-x-auto rounded-lg bg-stone-900 p-3 text-xs text-stone-100">{raw.raw}</pre>
-        </div>
-      )
-    }
-
-    <details class="group mt-4">
-      <summary class="flex min-h-11 cursor-pointer items-center text-sm font-medium text-brand-700">
-        {text ? `Extracted text (${text.length.toLocaleString()} characters)` : "No extracted text"}
-      </summary>
-      {text && <p class="mt-2 max-h-96 overflow-y-auto text-sm whitespace-pre-wrap text-stone-700">{text.slice(0, 6000)}</p>}
-    </details>
-  </article>
-
-  {
-    queued && (
-      <div class="mt-4 grid grid-cols-3 gap-2">
-        <a href={`/admin/queue/${id}/edit`} class={btnSecondary}>
-          <Icon name="pencil" class="size-5 text-stone-500" /> Edit
-        </a>
-        <a href={`/admin/queue/${id}/reassign`} class={btnSecondary}>
-          <Icon name="arrowsRightLeft" class="size-5 text-stone-500" /> Move
-        </a>
-        <form method="post">
-          <button type="submit" name="action" value="skip" class={`${btnSecondary} w-full`}>
-            <Icon name="forward" class="size-5 text-stone-500" /> Skip
-          </button>
-        </form>
-      </div>
-    )
-  }
-
-  {
-    queued && (
-      <form method="post" class="fixed inset-x-0 bottom-0 z-10 border-t border-stone-200 bg-white/95 backdrop-blur">
-        <div class="mx-auto max-w-2xl px-4 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-          {c ? (
-            <label class="flex min-h-11 items-center gap-3 text-sm text-stone-700">
-              <input type="checkbox" name="use_in_prompt" class="size-5 rounded border-stone-300 accent-brand-600" />
-              Use as a few-shot example
-            </label>
-          ) : (
-            <p class="flex min-h-11 items-center text-sm text-stone-500">To use this as an example, fill it in with Edit.</p>
-          )}
-          <div class="grid grid-cols-2 gap-3">
-            <button type="submit" name="action" value="reject" class={`${btnReject} min-h-14`}>
-              <Icon name="xMark" /> Reject
-            </button>
-            <button type="submit" name="action" value="approve" class={`${btnApprove} min-h-14`} disabled={!tool}>
-              <Icon name="check" /> Approve
-            </button>
+            <h2 class="mt-3 text-lg leading-snug font-semibold break-words lg:text-xl lg:font-bold lg:tracking-tight">
+              <a href={post.url} target="_blank" rel="noopener noreferrer" class="hover:underline">
+                {post.title}
+                <Icon name="arrowTopRight" class="mb-0.5 inline size-4 text-stone-400" />
+              </a>
+            </h2>
+            <p class="mt-1 truncate text-sm text-stone-500">{hostname(post.url)}</p>
           </div>
+
+          {/* Desktop actions: top right in a wide pane, under the title otherwise. */}
+          {queued && <ReviewActions layout="desktop" editHref={editHref} moveHref={moveHref} canApprove={!!tool} canBeExample={!!c} />}
         </div>
-      </form>
-    )
-  }
+
+        {/* Two columns once the pane is wide enough: the classification, then the extracted text. */}
+        <div class="@2xl:grid @2xl:grid-cols-2 @2xl:gap-6">
+          <div>
+            <section class="mt-4 rounded-lg bg-stone-50 p-3 text-sm" aria-labelledby="resolves-to">
+              <h3 id="resolves-to" class="font-mono text-xs tracking-widest text-stone-500 uppercase">Resolves to</h3>
+              {
+                !tool ? (
+                  <p class="mt-1 text-stone-600">No tool assigned. Use Edit to name it.</p>
+                ) : isNewTool(tool) ? (
+                  <>
+                    <p class="mt-1 flex flex-wrap items-center gap-2">
+                      <span class={`rounded-md px-2 py-0.5 text-xs font-semibold ${accentFill}`}>New tool</span>
+                      <a href={`/admin/tools/${tool.id}`} class="font-semibold hover:underline">{tool.name}</a>
+                    </p>
+                    <p class="mt-1 text-stone-600">This is the tool's only post, so approving it publishes the tool.</p>
+                  </>
+                ) : (
+                  <p class="mt-1">
+                    <a href={`/admin/tools/${tool.id}`} class="font-semibold hover:underline">{tool.name}</a>{" "}
+                    <span class="text-stone-500">
+                      · {tool.posts} {tool.posts === 1 ? "post" : "posts"} · {tool.status}
+                    </span>
+                  </p>
+                )
+              }
+            </section>
+
+            {typeof c?.reason === "string" && c.reason && (
+              <figure class="mt-4">
+                <figcaption class="font-mono text-xs tracking-widest text-stone-500 uppercase">Model's reason</figcaption>
+                <blockquote class="mt-1 text-sm text-stone-800">{c.reason}</blockquote>
+              </figure>
+            )}
+
+            {
+              tags.length > 0 && (
+                <div class="mt-4">
+                  <p class="font-mono text-xs tracking-widest text-stone-500 uppercase">Tags</p>
+                  <ul class="mt-1 flex flex-wrap gap-1.5">
+                    {tags.map((t) =>
+                      t.known ? (
+                        <li class="rounded-md bg-stone-100 px-2 py-0.5 text-sm text-stone-700">{t.label}</li>
+                      ) : (
+                        <li class="rounded-md px-2 py-0.5 font-mono text-sm text-stone-500 line-through ring-1 ring-stone-200 ring-inset">
+                          <span class="sr-only">Not in your tag list: </span>
+                          {t.slug}
+                        </li>
+                      ),
+                    )}
+                  </ul>
+                  {struck && (
+                    <p class="mt-2 text-sm text-stone-600">
+                      Struck tags aren't in your tag list. Saving with Edit drops them.{" "}
+                      <a href="/admin/settings#tags" class={accentLink}>Edit tag list</a>
+                    </p>
+                  )}
+                </div>
+              )
+            }
+
+            {
+              rows.length > 0 && (
+                <dl class="mt-4 divide-y divide-stone-100 text-sm">
+                  {rows.map(([k, v, href]) => (
+                    <div class="grid grid-cols-3 gap-3 py-2">
+                      <dt class="text-stone-500">{k}</dt>
+                      <dd class="col-span-2 break-words text-stone-900">
+                        {href ? (
+                          <a href={href} target="_blank" rel="noopener noreferrer" class="font-medium text-brand-700 underline decoration-brand-100 underline-offset-2 hover:decoration-brand-600">
+                            {fmt(v)}
+                            <Icon name="arrowTopRight" class="mb-0.5 ml-0.5 inline size-4" />
+                          </a>
+                        ) : (
+                          fmt(v)
+                        )}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              )
+            }
+
+            {
+              raw && (
+                <div class="mt-4">
+                  <p class="text-sm font-medium text-red-700">The model's output was invalid{raw.error ? `: ${raw.error}` : ""}</p>
+                  <pre class="mt-2 overflow-x-auto rounded-lg bg-stone-900 p-3 text-xs text-stone-100">{raw.raw}</pre>
+                </div>
+              )
+            }
+          </div>
+
+          {/* One <details>: collapsed on phones, always open from lg up (forced through ::details-content). */}
+          <details class="mt-4 lg:details-content:[content-visibility:visible]">
+            <summary class="flex min-h-11 cursor-pointer items-center text-sm font-medium text-brand-700 lg:min-h-0 lg:cursor-auto lg:font-mono lg:text-xs lg:font-normal lg:tracking-widest lg:text-stone-500 lg:uppercase">
+              {text ? `Extracted text · ${num(text.length)} characters` : "No extracted text"}
+            </summary>
+            {
+              textPreview && (
+                <p tabindex="0" class="mt-2 max-h-96 overflow-y-auto text-sm whitespace-pre-wrap text-stone-700 focus-visible:outline-2 focus-visible:outline-lime-600 lg:max-h-[32rem] lg:rounded-lg lg:bg-stone-50 lg:p-3">{textPreview}</p>
+              )
+            }
+          </details>
+        </div>
+      </article>
+
+      {queued && <ReviewActions layout="phone" editHref={editHref} moveHref={moveHref} canApprove={!!tool} canBeExample={!!c} />}
+    </div>
+  </div>
 </Admin>

@@ -1,5 +1,6 @@
 ---
 import { env } from "cloudflare:workers";
+import Icon, { type IconName } from "../components/Icon.astro";
 import { navCounts } from "../lib/admin-nav.ts";
 import { buildInfo } from "../lib/version.ts";
 import Base from "./Base.astro";
@@ -9,9 +10,11 @@ interface Props {
   section?: "queue" | "tools" | "reports" | "status" | "settings";
   /** Widen to 5xl from `lg` up, for table pages. */
   wide?: boolean;
+  /** From `lg` up, drop the width limit and padding so the page lays out its own columns (the queue split view). */
+  full?: boolean;
 }
-const { title, section, wide = false } = Astro.props;
-const width = wide ? "max-w-2xl lg:max-w-5xl" : "max-w-2xl";
+const { title, section, wide = false, full = false } = Astro.props;
+const width = full ? "max-w-2xl lg:max-w-none" : wide ? "max-w-2xl lg:max-w-5xl" : "max-w-2xl";
 const email = Astro.locals.adminEmail;
 const counts = await navCounts(env.DB);
 const build = buildInfo(env.CF_VERSION_METADATA);
@@ -19,30 +22,31 @@ interface Tab {
   id: NonNullable<Props["section"]>;
   href: string;
   label: string;
+  icon: IconName;
   count?: number;
   /** What the count means, for screen readers. */
   countLabel?: string;
 }
 const tabs: Tab[] = [
-  { id: "queue", href: "/admin/queue", label: "Queue", count: counts?.queue, countLabel: "waiting" },
-  { id: "tools", href: "/admin/tools", label: "Tools", count: counts?.tools, countLabel: "tools" },
-  { id: "reports", href: "/admin/reports", label: "Reports", count: counts?.reports, countLabel: "open" },
-  { id: "status", href: "/admin/status", label: "Status" },
-  { id: "settings", href: "/admin/settings", label: "Settings" },
+  { id: "queue", href: "/admin/queue", label: "Queue", icon: "inbox", count: counts?.queue, countLabel: "waiting" },
+  { id: "tools", href: "/admin/tools", label: "Tools", icon: "cube", count: counts?.tools, countLabel: "tools" },
+  { id: "reports", href: "/admin/reports", label: "Reports", icon: "flag", count: counts?.reports, countLabel: "open" },
+  { id: "status", href: "/admin/status", label: "Status", icon: "chartBar" },
+  { id: "settings", href: "/admin/settings", label: "Settings", icon: "cog" },
 ];
+const showCount = (t: Tab, active: boolean) => t.count !== undefined && (t.count > 0 || active);
 ---
 
 <Base title={`${title} · Slop Bucket admin`} noindex htmlClass="bg-stone-50" bodyClass="font-sans text-stone-900">
-  <header class="sticky top-0 z-10 border-b border-stone-200 bg-white">
-    <div class={`mx-auto flex h-13 ${width} items-center gap-2 px-4`}>
-      <a href="/admin/queue" class="shrink-0 rounded-md focus-visible:outline-2 focus-visible:outline-lime-600">
-        <img src="/logo.svg" alt="Slop Bucket" width="127" height="28" class="h-7 w-auto" />
+  <!-- Desktop (lg and up): a fixed dark sidebar. Phones get the top bar and tabs below instead. -->
+  <aside class="fixed inset-y-0 left-0 z-20 hidden w-60 flex-col gap-5 overflow-y-auto bg-stone-900 px-3 py-4 text-stone-300 lg:flex">
+    <div class="flex items-center gap-2 px-1.5">
+      <a href="/admin/queue" class="shrink-0 rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime-400">
+        <img src="/logo-dark.svg" alt="Slop Bucket" width="127" height="28" class="h-7 w-auto" />
       </a>
-      <span class="rounded bg-stone-900 px-1.5 py-0.5 font-mono text-[10px] font-bold tracking-widest text-white uppercase">Admin</span>
-      {email && <span class="ml-2 hidden truncate text-sm text-stone-500 sm:block">{email}</span>}
-      <a href="/" class="ml-auto inline-flex min-h-11 shrink-0 items-center text-sm font-medium text-lime-700 hover:underline">View site</a>
+      <span class="rounded bg-lime-400 px-1.5 py-0.5 font-mono text-[10px] font-bold tracking-widest text-lime-950 uppercase">Admin</span>
     </div>
-    <nav class={`mx-auto flex ${width} overflow-x-auto px-2`} aria-label="Admin sections">
+    <nav class="flex flex-col gap-0.5" aria-label="Admin sections">
       {
         tabs.map((t) => {
           const active = section === t.id;
@@ -50,12 +54,13 @@ const tabs: Tab[] = [
             <a
               href={t.href}
               aria-current={active ? "page" : undefined}
-              class={`flex min-h-11 shrink-0 items-center gap-1 border-b-2 px-2 text-sm font-medium focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-lime-600 ${active ? "border-stone-900 text-stone-900" : "border-transparent text-stone-500 hover:text-stone-900"}`}
+              class={`flex min-h-10 items-center gap-2.5 rounded-lg px-2.5 text-sm font-medium focus-visible:outline-2 focus-visible:outline-lime-400 ${active ? "bg-white/10 text-stone-50" : "hover:bg-white/5 hover:text-stone-50"}`}
             >
+              <Icon name={t.icon} class={`size-5 shrink-0 ${active ? "text-stone-50" : "text-stone-400"}`} />
               {t.label}
-              {t.count !== undefined && (t.count > 0 || active) && (
-                <span class={`rounded-full px-1.5 font-mono text-xs tabular-nums ${active ? "bg-lime-400 text-lime-950" : "bg-stone-100 text-stone-600"}`}>
-                  {t.count.toLocaleString("en")}
+              {showCount(t, active) && (
+                <span class={`ml-auto rounded-full px-1.5 font-mono text-xs tabular-nums ${active ? "bg-lime-400 text-lime-950" : "bg-white/10 text-stone-300"}`}>
+                  {t.count!.toLocaleString("en")}
                   <span class="sr-only"> {t.countLabel}</span>
                 </span>
               )}
@@ -64,13 +69,54 @@ const tabs: Tab[] = [
         })
       }
     </nav>
-  </header>
-  <main class={`mx-auto ${width} px-4 pt-4 pb-8`}>
-    <slot />
-  </main>
-  <footer class={`mx-auto ${width} px-4 pb-40 font-mono text-xs break-all text-stone-500`}>
-    Commit {build.commitHref ? <a href={build.commitHref} class="text-lime-700 hover:underline">{build.commit}</a> : "unknown"}
-    · Version <span title={build.versionId}>{build.versionShort}</span>
-    {build.deployedAt && <span>· <time datetime={build.deployedAt}>{build.deployedAt.replace("T", " ").slice(0, 16)} UTC</time></span>}
-  </footer>
+    <div class="mt-auto flex flex-col gap-1">
+      {email && <p class="truncate px-2.5 text-xs text-stone-400" title={email}>{email}</p>}
+      <a href="/" class="flex min-h-10 items-center gap-2.5 rounded-lg px-2.5 text-sm font-medium text-stone-400 hover:bg-white/5 hover:text-stone-50 focus-visible:outline-2 focus-visible:outline-lime-400">
+        <Icon name="arrowTopRight" class="size-5 shrink-0" /> View public site
+      </a>
+    </div>
+  </aside>
+
+  <div class="lg:pl-60">
+    <header class="sticky top-0 z-10 border-b border-stone-200 bg-white lg:hidden">
+      <div class={`mx-auto flex h-13 ${width} items-center gap-2 px-4`}>
+        <a href="/admin/queue" class="shrink-0 rounded-md focus-visible:outline-2 focus-visible:outline-lime-600">
+          <img src="/logo.svg" alt="Slop Bucket" width="127" height="28" class="h-7 w-auto" />
+        </a>
+        <span class="rounded bg-stone-900 px-1.5 py-0.5 font-mono text-[10px] font-bold tracking-widest text-white uppercase">Admin</span>
+        {email && <span class="ml-2 hidden truncate text-sm text-stone-500 sm:block">{email}</span>}
+        <a href="/" class="ml-auto inline-flex min-h-11 shrink-0 items-center text-sm font-medium text-lime-700 hover:underline">View site</a>
+      </div>
+      <nav class={`mx-auto flex ${width} overflow-x-auto px-2`} aria-label="Admin sections">
+        {
+          tabs.map((t) => {
+            const active = section === t.id;
+            return (
+              <a
+                href={t.href}
+                aria-current={active ? "page" : undefined}
+                class={`flex min-h-11 shrink-0 items-center gap-1 border-b-2 px-2 text-sm font-medium focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-lime-600 ${active ? "border-stone-900 text-stone-900" : "border-transparent text-stone-500 hover:text-stone-900"}`}
+              >
+                {t.label}
+                {showCount(t, active) && (
+                  <span class={`rounded-full px-1.5 font-mono text-xs tabular-nums ${active ? "bg-lime-400 text-lime-950" : "bg-stone-100 text-stone-600"}`}>
+                    {t.count!.toLocaleString("en")}
+                    <span class="sr-only"> {t.countLabel}</span>
+                  </span>
+                )}
+              </a>
+            );
+          })
+        }
+      </nav>
+    </header>
+    <main class={`mx-auto ${width} px-4 pt-4 pb-8 ${full ? "lg:p-0" : "lg:pt-8"}`}>
+      <slot />
+    </main>
+    <footer class={`mx-auto ${width} px-4 pb-40 font-mono text-xs break-all text-stone-500 lg:pb-8 ${full ? "lg:px-6 lg:pt-6" : ""}`}>
+      Commit {build.commitHref ? <a href={build.commitHref} class="text-lime-700 hover:underline">{build.commit}</a> : "unknown"}
+      · Version <span title={build.versionId}>{build.versionShort}</span>
+      {build.deployedAt && <span>· <time datetime={build.deployedAt}>{build.deployedAt.replace("T", " ").slice(0, 16)} UTC</time></span>}
+    </footer>
+  </div>
 </Base>
