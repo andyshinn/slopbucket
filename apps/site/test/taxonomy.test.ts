@@ -1,7 +1,18 @@
 import { env } from "cloudflare:workers";
 import { getSetting } from "@slop-bucket/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { TaxonomyError, addCategory, categoryOverview, mergeCategory, otherShare, reorderCategory, updateCategory } from "../src/lib/taxonomy-admin.ts";
+import {
+  TaxonomyError,
+  addCategory,
+  canMove,
+  categoryOverview,
+  loadCategorySettings,
+  mergeCategory,
+  otherShare,
+  reorderCategory,
+  saveCategorySettings,
+  updateCategory,
+} from "../src/lib/taxonomy-admin.ts";
 
 const db = env.DB;
 let original: { categories: string; info: string };
@@ -111,6 +122,32 @@ describe("updateCategory", () => {
     await expect(updateCategory(db, "other", fields({ slug: "misc" }))).rejects.toThrow("can't be renamed");
     await expect(updateCategory(db, "cli", fields({ slug: "agent" }))).rejects.toThrow("Merge");
     await expect(updateCategory(db, "nope", fields())).rejects.toThrow("not a category");
+  });
+});
+
+describe("canMove", () => {
+  it("keeps other last and the ends in place, wherever other is stored", () => {
+    expect(canMove(["a", "b", "other"], "a", "up")).toBe(false);
+    expect(canMove(["a", "b", "other"], "a", "down")).toBe(true);
+    expect(canMove(["a", "b", "other"], "b", "down")).toBe(false);
+    expect(canMove(["a", "other", "b"], "b", "up")).toBe(false);
+    expect(canMove(["a", "other", "b"], "other", "down")).toBe(false);
+    expect(canMove(["a", "b", "other"], "nope", "up")).toBe(false);
+  });
+});
+
+describe("saveCategorySettings", () => {
+  it("changes nothing and throws when a setting changed after it was read", async () => {
+    const t = await tool("cli");
+    const read = await loadCategorySettings(db);
+    // Another tab reorders in the meantime.
+    await reorderCategory(db, "cli", "up");
+    const after = await loadCategorySettings(db);
+    await expect(
+      saveCategorySettings(db, read, read.categories.filter((c) => c !== "cli"), read.info, { from: "cli", into: "other" }),
+    ).rejects.toThrow("changed somewhere else");
+    expect((await loadCategorySettings(db)).stored).toEqual(after.stored);
+    expect(await categoryOf("tools", t)).toBe("cli");
   });
 });
 

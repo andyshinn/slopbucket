@@ -3,14 +3,14 @@ import { env } from "cloudflare:workers";
 import CategoryFields from "../../../../components/CategoryFields.astro";
 import Notice from "../../../../components/Notice.astro";
 import Admin from "../../../../layouts/Admin.astro";
-import { TaxonomyError, addCategory } from "../../../../lib/taxonomy-admin.ts";
+import { TaxonomyError, addCategory, fieldsFromForm } from "../../../../lib/taxonomy-admin.ts";
 import { btnPrimary, card } from "../../../../lib/ui.ts";
 
 let error: string | null = null;
-let values = { slug: "", label: "", hue: "", hint: "", blurb: "" };
+let values = fieldsFromForm(null);
 if (Astro.request.method === "POST") {
   const form = await Astro.request.formData();
-  values = { slug: "", label: "", hue: "", hint: "", blurb: "", ...Object.fromEntries([...form].map(([k, v]) => [k, String(v)])) };
+  values = fieldsFromForm(form);
   try {
     const slug = await addCategory(env.DB, form);
     return Astro.redirect(`/admin/taxonomy?view=categories&done=added#cat-${slug}`, 303);

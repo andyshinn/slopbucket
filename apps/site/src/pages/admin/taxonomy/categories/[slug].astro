@@ -3,7 +3,7 @@ import { env } from "cloudflare:workers";
 import CategoryFields from "../../../../components/CategoryFields.astro";
 import Notice from "../../../../components/Notice.astro";
 import Admin from "../../../../layouts/Admin.astro";
-import { OTHER, TaxonomyError, categoryOverview, mergeCategory, updateCategory } from "../../../../lib/taxonomy-admin.ts";
+import { OTHER, TaxonomyError, categoryOverview, fieldsFromForm, mergeCategory, updateCategory } from "../../../../lib/taxonomy-admin.ts";
 import { btnPrimary, btnReject, card, input, label, num } from "../../../../lib/ui.ts";
 
 const slug = Astro.params.slug ?? "";
@@ -16,7 +16,7 @@ if (Astro.request.method === "POST") {
     if (action === "save") {
       submitted = form;
       const saved = await updateCategory(env.DB, slug, form);
-      return Astro.redirect(`/admin/taxonomy/categories/${saved}?done=${saved === slug ? "save" : "renamed"}`, 303);
+      return Astro.redirect(`/admin/taxonomy/categories/${encodeURIComponent(saved)}?done=${saved === slug ? "save" : "renamed"}`, 303);
     }
     if (action === "merge") {
       await mergeCategory(env.DB, slug, String(form.get("into") ?? ""));
@@ -33,8 +33,7 @@ if (Astro.request.method === "POST") {
 const { rows } = await categoryOverview(env.DB);
 const category = rows.find((r) => r.slug === slug);
 if (!category) return Astro.redirect("/admin/taxonomy?view=categories", 302);
-const field = (k: "slug" | "label" | "hue" | "hint" | "blurb") => (submitted ? String(submitted.get(k) ?? "") : category[k]);
-const values = { slug: field("slug"), label: field("label"), hue: field("hue"), hint: field("hint"), blurb: field("blurb") };
+const values = submitted ? fieldsFromForm(submitted) : { slug, label: category.label, hue: category.hue, hint: category.hint, blurb: category.blurb };
 const others = rows.filter((r) => r.slug !== slug);
 const done = Astro.url.searchParams.get("done");
 const doneMessage: Record<string, string> = {

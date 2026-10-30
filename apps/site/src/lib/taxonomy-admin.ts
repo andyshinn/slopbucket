@@ -1,4 +1,4 @@
-import { CATEGORY_HUES, type CategoryDisplay, type CategoryHue, type CategoryInfo, categoryDisplay, getSetting, settingSchemas } from "@slop-bucket/core";
+import { CATEGORY_HUES, type CategoryDisplay, type CategoryHue, type CategoryInfo, categoryDisplay, getSetting, parseSetting, settingSchemas } from "@slop-bucket/core";
 
 // Categories on /admin/taxonomy. The `categories` setting is the list (the classifier's
 // enum and the display order) and `category_info` holds each one's label, color,
@@ -56,68 +56,113 @@ export function otherShare(overview: CategoryOverview): number | null {
 
 const slugify = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
-interface CategoryFields {
-  slug: string;
-  label: string;
+/** The fields of the add and edit forms. */
+export const CATEGORY_FIELD_KEYS = ["slug", "label", "hue", "hint", "blurb"] as const;
+export type CategoryFieldValues = Record<(typeof CATEGORY_FIELD_KEYS)[number], string>;
+
+/** The form's fields as submitted (blank when missing), to re-show them after an error. */
+export function fieldsFromForm(form: FormData | null): CategoryFieldValues {
+  return Object.fromEntries(CATEGORY_FIELD_KEYS.map((k) => [k, String(form?.get(k) ?? "")])) as CategoryFieldValues;
+}
+
+interface CategoryFields extends CategoryFieldValues {
   hue: CategoryHue;
-  hint: string;
-  blurb: string;
 }
 
 function readFields(form: FormData): CategoryFields {
-  const str = (k: string) => String(form.get(k) ?? "").trim().replace(/\s+/g, " ");
-  const slug = slugify(str("slug"));
+  const raw = fieldsFromForm(form);
+  const [slugText, label, hue, hint, blurb] = CATEGORY_FIELD_KEYS.map((k) => raw[k].trim().replace(/\s+/g, " "));
+  const slug = slugify(slugText!);
   if (!slug) throw new TaxonomyError("Give it a slug: lowercase letters, digits and hyphens.");
-  const label = str("label");
   if (!label) throw new TaxonomyError("Give it a label.");
-  const hue = str("hue");
-  if (!(CATEGORY_HUES as readonly string[]).includes(hue)) throw new TaxonomyError("Pick a color.");
-  return { slug, label, hue: hue as CategoryHue, hint: str("hint"), blurb: str("blurb") };
+  if (!(CATEGORY_HUES as readonly string[]).includes(hue!)) throw new TaxonomyError("Pick a color.");
+  return { slug, label, hue: hue as CategoryHue, hint: hint!, blurb: blurb! };
 }
 
-/** Statements that save both settings, validated with the Worker's schemas first. */
-function saveStatements(db: D1Database, categories: string[], info: CategoryInfo): D1PreparedStatement[] {
+/** Whether a category can move one place up or down: "other" stays last and nothing passes it. */
+export function canMove(categories: readonly string[], slug: string, direction: "up" | "down"): boolean {
+  const at = categories.indexOf(slug);
+  const to = direction === "up" ? at - 1 : at + 1;
+  return at !== -1 && slug !== OTHER && to >= 0 && to < categories.length && categories[to] !== OTHER;
+}
+
+/** Both settings as read, with their stored JSON so a save can check nobody changed them since. */
+export interface CategorySettings {
+  categories: string[];
+  info: CategoryInfo;
+  stored: { categories: string; info: string };
+}
+
+export async function loadCategorySettings(db: D1Database): Promise<CategorySettings> {
+  const { results } = await db
+    .prepare("SELECT key, value FROM settings WHERE key IN ('categories', 'category_info')")
+    .all<{ key: string; value: string }>();
+  const stored = (key: string) => {
+    const row = results.find((r) => r.key === key);
+    if (!row) throw new Error(`Missing setting: ${key}`);
+    return row.value;
+  };
+  const raw = { categories: stored("categories"), info: stored("category_info") };
+  return { categories: [...parseSetting("categories", raw.categories)], info: { ...parseSetting("category_info", raw.info) }, stored: raw };
+}
+
+// True while both settings still hold what was read; binds ?3 (categories) and ?4 (category_info).
+const UNCHANGED = `(SELECT value FROM settings WHERE key = 'categories') = ?3
+  AND (SELECT value FROM settings WHERE key = 'category_info') = ?4`;
+
+/**
+ * Saves both settings and, when `move` is given, moves everything stored under one category
+ * to another, in one batch. Every statement only applies if neither setting changed since
+ * `read` (another tab, a double tap, or a Settings save), so a stale edit changes nothing
+ * and throws instead of overwriting.
+ */
+export async function saveCategorySettings(
+  db: D1Database,
+  read: CategorySettings,
+  categories: string[],
+  info: CategoryInfo,
+  move?: { from: string; into: string },
+): Promise<void> {
   const list = settingSchemas.categories.safeParse(categories);
   if (!list.success) throw new TaxonomyError(list.error.issues.map((i) => i.message).join("; "));
   const details = settingSchemas.category_info.parse(info);
-  const save = "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value";
-  return [db.prepare(save).bind("categories", JSON.stringify(list.data)), db.prepare(save).bind("category_info", JSON.stringify(details))];
-}
-
-/** Statements that move everything stored under one category to another. */
-function moveStatements(db: D1Database, from: string, into: string): D1PreparedStatement[] {
-  return [
-    db.prepare("UPDATE tools SET category = ?2 WHERE category = ?1").bind(from, into),
-    db
-      .prepare("UPDATE posts SET classification = json_set(classification, '$.category', ?2) WHERE json_extract(classification, '$.category') = ?1")
-      .bind(from, into),
-    db
-      .prepare("UPDATE review_decisions SET corrected_fields = json_set(corrected_fields, '$.category', ?2) WHERE json_extract(corrected_fields, '$.category') = ?1")
-      .bind(from, into),
-  ];
-}
-
-async function load(db: D1Database) {
-  const [categories, info] = await Promise.all([getSetting(db, "categories"), getSetting(db, "category_info")]);
-  return { categories: [...categories], info: { ...info } };
+  const guard = [read.stored.categories, read.stored.info];
+  const moves = move
+    ? [
+        "UPDATE tools SET category = ?2 WHERE category = ?1",
+        "UPDATE posts SET classification = json_set(classification, '$.category', ?2) WHERE json_extract(classification, '$.category') = ?1",
+        "UPDATE review_decisions SET corrected_fields = json_set(corrected_fields, '$.category', ?2) WHERE json_extract(corrected_fields, '$.category') = ?1",
+      ].map((sql) => db.prepare(`${sql} AND ${UNCHANGED}`).bind(move.from, move.into, ...guard))
+    : [];
+  // Last, so the moves above still see the values as read.
+  const save = db
+    .prepare(
+      `UPDATE settings SET value = CASE key WHEN 'categories' THEN ?1 ELSE ?2 END
+       WHERE key IN ('categories', 'category_info') AND ${UNCHANGED}`,
+    )
+    .bind(JSON.stringify(list.data), JSON.stringify(details), ...guard);
+  const results = await db.batch([...moves, save]);
+  if (results.at(-1)!.meta.changes === 0) throw new TaxonomyError("Categories changed somewhere else while you were editing. Reload and try again.");
 }
 
 /** Adds a category just above "other", which always stays last. Returns its slug. */
 export async function addCategory(db: D1Database, form: FormData): Promise<string> {
   const { slug, ...details } = readFields(form);
-  const { categories, info } = await load(db);
+  const read = await loadCategorySettings(db);
+  const { categories, info } = read;
   if (categories.includes(slug)) throw new TaxonomyError(`"${slug}" is already a category.`);
   const at = categories.indexOf(OTHER);
   categories.splice(at === -1 ? categories.length : at, 0, slug);
   info[slug] = details;
-  await db.batch(saveStatements(db, categories, info));
+  await saveCategorySettings(db, read, categories, info);
   return slug;
 }
 
 /** Saves a category's details. A new slug renames it, moving its tools and posts along. Returns the slug. */
 export async function updateCategory(db: D1Database, slug: string, form: FormData): Promise<string> {
   const { slug: newSlug, ...details } = readFields(form);
-  const { categories, info } = await load(db);
+  const read = await loadCategorySettings(db);
+  const { categories, info } = read;
   const at = categories.indexOf(slug);
   if (at === -1) throw new TaxonomyError(`"${slug}" is not a category.`);
   const renamed = newSlug !== slug;
@@ -126,18 +171,19 @@ export async function updateCategory(db: D1Database, slug: string, form: FormDat
   categories[at] = newSlug;
   delete info[slug];
   info[newSlug] = details;
-  await db.batch([...saveStatements(db, categories, info), ...(renamed ? moveStatements(db, slug, newSlug) : [])]);
+  await saveCategorySettings(db, read, categories, info, renamed ? { from: slug, into: newSlug } : undefined);
   return newSlug;
 }
 
-/** Moves a category one place up or down the list; "other" stays last. */
+/** Moves a category one place up or down the list (see canMove). */
 export async function reorderCategory(db: D1Database, slug: string, direction: "up" | "down"): Promise<void> {
-  const { categories, info } = await load(db);
+  const read = await loadCategorySettings(db);
+  const { categories, info } = read;
+  if (!canMove(categories, slug, direction)) return;
   const at = categories.indexOf(slug);
   const to = direction === "up" ? at - 1 : at + 1;
-  if (at === -1 || slug === OTHER || to < 0 || to >= categories.length || categories[to] === OTHER) return;
   [categories[at], categories[to]] = [categories[to]!, categories[at]!];
-  await db.batch(saveStatements(db, categories, info));
+  await saveCategorySettings(db, read, categories, info);
 }
 
 /**
@@ -146,11 +192,11 @@ export async function reorderCategory(db: D1Database, slug: string, direction: "
  * what is still stored under it.
  */
 export async function mergeCategory(db: D1Database, slug: string, into: string): Promise<void> {
-  const { categories, info } = await load(db);
+  const read = await loadCategorySettings(db);
+  const { categories, info } = read;
   if (slug === OTHER) throw new TaxonomyError('"other" can\'t be removed.');
   if (!categories.includes(into)) throw new TaxonomyError("Pick a category to move them into.");
   if (into === slug) throw new TaxonomyError("Pick a different category to move them into.");
-  const remaining = categories.filter((c) => c !== slug);
   delete info[slug];
-  await db.batch([...moveStatements(db, slug, into), ...saveStatements(db, remaining, info)]);
+  await saveCategorySettings(db, read, categories.filter((c) => c !== slug), info, { from: slug, into });
 }

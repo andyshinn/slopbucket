@@ -1,10 +1,11 @@
 ---
 import { CATEGORY_HUES } from "@slop-bucket/core";
 import { hueClasses } from "../lib/categories.ts";
+import type { CategoryFieldValues } from "../lib/taxonomy-admin.ts";
 import { input, label } from "../lib/ui.ts";
 
 interface Props {
-  values: { slug: string; label: string; hue: string; hint: string; blurb: string };
+  values: CategoryFieldValues;
   /** "other" keeps its slug: the classifier and the review rules rely on it. */
   lockSlug?: boolean;
   /** Shown under the slug when editing: what a rename does. */
