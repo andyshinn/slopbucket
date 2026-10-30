@@ -12,7 +12,7 @@ const { buckets, noScore, held, queued, publishAtCurrent } = histogram;
 const widest = Math.max(1, ...buckets.map((b) => b.posts));
 const other = buckets.reduce((sum, b) => sum + b.other, 0);
 const pct = (n: number) => `${(n / widest) * 100}%`;
-const range = (from: number) => (from === 0.9 ? "0.9–1.0" : `${from.toFixed(1)}–${(from + 0.1).toFixed(1)}`);
+const range = (from: number) => `${from.toFixed(1)}–${Math.min(1, from + 0.1).toFixed(1)}`;
 const h3 = "font-mono text-xs font-bold tracking-widest text-stone-500 uppercase";
 ---
 

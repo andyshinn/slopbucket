@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { getSetting, publishConfidentPreview } from "@slop-bucket/core";
 import { describe, expect, it } from "vitest";
-import { SETTING_FIELDS, SettingError, formatTagGroups, loadSettings, saveSetting, suggestedTags, thresholdHistogram } from "../src/lib/settings-admin.ts";
+import { SETTING_FIELDS, SettingError, formatTagGroups, loadSettings, saveSetting, queuedScores, suggestedTags, thresholdHistogram } from "../src/lib/settings-admin.ts";
 
 const db = env.DB;
 const form = (entries: Record<string, string>) => {
@@ -123,7 +123,8 @@ describe("thresholdHistogram", () => {
     const reviewedId = (ids[9]?.results[0] as { id: number }).id;
     await db.prepare("INSERT INTO review_decisions (post_id, decision) VALUES (?, 'approved')").bind(reviewedId).run();
 
-    const h = await thresholdHistogram(db, 0.85);
+    const scores = await queuedScores(db);
+    const h = thresholdHistogram(scores, 0.85);
     expect(h.queued).toBe(10);
     expect(h.noScore).toBe(1);
     expect(h.held).toBe(2);
@@ -135,12 +136,12 @@ describe("thresholdHistogram", () => {
     expect(at(0.7)).toEqual({ from: 0.7, posts: 0, other: 0, publishNow: 0, publishAt: 5 });
     expect(at(0.3)).toEqual({ from: 0.3, posts: 1, other: 0, publishNow: 0, publishAt: 6 });
     expect(at(0)?.publishAt).toBe(6);
-    expect((await thresholdHistogram(db, 1)).publishAtCurrent).toBe(0);
+    expect(thresholdHistogram(scores, 1).publishAtCurrent).toBe(0);
 
     // The headline matches what the Publish confident posts confirmation will say.
     for (const t of [0.85, 0.8, 0.3, 0]) {
       await saveSetting(db, "review_threshold", form({ value: String(t) }));
-      expect((await thresholdHistogram(db, t)).publishAtCurrent).toBe((await publishConfidentPreview(db)).posts);
+      expect(thresholdHistogram(scores, t).publishAtCurrent).toBe((await publishConfidentPreview(db)).posts);
     }
     await saveSetting(db, "review_threshold", form({ value: "1" }));
     await db.prepare("DELETE FROM review_decisions").run();

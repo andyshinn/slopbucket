@@ -151,39 +151,65 @@ export interface ThresholdHistogram {
   publishAtCurrent: number;
 }
 
-/**
- * Queued posts by stored confidence, in 0.1 buckets, with how many Publish confident
- * posts would publish at each threshold (the same posts and rule as PUBLISH_CONFIDENT_SQL).
- */
-export async function thresholdHistogram(db: D1Database, threshold: number): Promise<ThresholdHistogram> {
-  // Grouped by exact score so the threshold comparison runs in autoPublishes(), as the classifier makes it.
+export interface QueuedScore {
+  confidence: number | null;
+  category: string | null;
+  /** Matches PUBLISHABLE_QUEUED_SQL: Publish confident posts may publish it at some threshold. */
+  eligible: 0 | 1 | null;
+  n: number;
+}
+
+/** Queued posts grouped by exact score, category and eligibility, for thresholdHistogram(). */
+export async function queuedScores(db: D1Database): Promise<QueuedScore[]> {
   const { results } = await db
     .prepare(
       `SELECT confidence, json_extract(classification, '$.category') AS category, (${PUBLISHABLE_QUEUED_SQL}) AS eligible, count(*) AS n
        FROM posts WHERE status = 'queued' GROUP BY 1, 2, 3`,
     )
-    .all<{ confidence: number | null; category: string | null; eligible: 0 | 1; n: number }>();
-  const scored = results.filter((r): r is typeof r & { confidence: number } => r.confidence !== null);
-  const sum = (rows: typeof scored, keep: (r: (typeof scored)[number]) => boolean = () => true) => rows.reduce((n, r) => n + (keep(r) ? r.n : 0), 0);
-  const publishes = (t: number) => (r: (typeof scored)[number]) => r.eligible === 1 && autoPublishes(t, r.confidence, r.category ?? "");
-  const buckets = Array.from({ length: 10 }, (_, i) => {
-    const from = (9 - i) / 10;
-    const to = (10 - i) / 10; // the top bucket has no upper edge, so it holds 1.0
-    const inBucket = scored.filter((r) => r.confidence >= from && (i === 0 || r.confidence < to));
-    return {
-      from,
-      posts: sum(inBucket),
-      other: sum(inBucket, (r) => r.category === "other"),
-      publishNow: sum(inBucket, publishes(threshold)),
-      publishAt: sum(scored, publishes(from)),
-    };
-  });
+    .all<QueuedScore>();
+  return results;
+}
+
+/** Bucket edges above 0; a score's bucket is how many it is at or above. */
+const EDGES = Array.from({ length: 9 }, (_, k) => (k + 1) / 10);
+
+/**
+ * Queued posts in 0.1 buckets of stored confidence, with how many Publish confident
+ * posts would publish at each threshold (the same posts and rule as PUBLISH_CONFIDENT_SQL).
+ */
+export function thresholdHistogram(rows: QueuedScore[], threshold: number): ThresholdHistogram {
+  const buckets = Array.from({ length: 10 }, (_, b) => ({ from: b / 10, posts: 0, other: 0, publishNow: 0, publishAt: 0, publishable: 0 }));
+  let noScore = 0;
+  let held = 0;
+  let queued = 0;
+  for (const r of rows) {
+    queued += r.n;
+    if (r.confidence === null) {
+      noScore += r.n;
+      continue;
+    }
+    // The same >= comparison as the threshold (exact decimal edges), so a score of 0.8 sits in
+    // 0.8–0.9 and publishes at 0.8. 1.0 is at or above every edge, so it lands in the top bucket.
+    const confidence = r.confidence;
+    const bucket = buckets[EDGES.filter((e) => confidence >= e).length]!;
+    bucket.posts += r.n;
+    if (r.category === "other") bucket.other += r.n;
+    else if (r.eligible !== 1) held += r.n;
+    else {
+      // At the bucket's own low edge (below 1, not "other") autoPublishes() holds for every such post.
+      bucket.publishable += r.n;
+      if (autoPublishes(threshold, confidence, r.category ?? "")) bucket.publishNow += r.n;
+    }
+  }
+  // A threshold at a bucket's low edge publishes that bucket and every one above it.
+  let above = 0;
+  for (let b = buckets.length - 1; b >= 0; b--) buckets[b]!.publishAt = above += buckets[b]!.publishable;
   return {
-    buckets,
-    noScore: results.reduce((n, r) => n + (r.confidence === null ? r.n : 0), 0),
-    held: sum(scored, (r) => r.eligible !== 1 && r.category !== "other"),
-    queued: results.reduce((n, r) => n + r.n, 0),
-    publishAtCurrent: sum(scored, publishes(threshold)),
+    buckets: buckets.reverse().map(({ publishable: _, ...b }) => b),
+    noScore,
+    held,
+    queued,
+    publishAtCurrent: buckets.reduce((n, b) => n + b.publishNow, 0),
   };
 }
 
