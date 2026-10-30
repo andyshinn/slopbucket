@@ -10,7 +10,7 @@ import {
   nextQueuedId,
   parseEditForm,
   parseQueueFilters,
-  queueCount,
+  queueCounts,
   queueFilterQuery,
   reassignPost,
   rejectPost,
@@ -63,7 +63,7 @@ describe("queue navigation", () => {
     const a = await post(t);
     const b = await post(t);
     await post(t, classification(), "published");
-    expect(await queueCount(db)).toBe(2);
+    expect(await queueCounts(db)).toEqual({ total: 2, matching: 2 });
     expect(await nextQueuedId(db)).toBe(a);
     expect(await nextQueuedId(db, a)).toBe(b);
     expect(await nextQueuedId(db, b)).toBe(a);
@@ -107,7 +107,7 @@ describe("queue filters", () => {
     const low = await queued(t, "hn", 0.5);
     const none = await queued(t, "lobsters", null);
     await post(t, classification({ confidence: 0.95 }), "published");
-    expect(await queueCount(db, filters("source=hn"))).toBe(2);
+    expect(await queueCounts(db, filters("source=hn"))).toEqual({ total: 4, matching: 2 });
     expect((await listQueue(db, filters("band=high"))).map((q) => q.id)).toEqual([hi]);
     expect((await listQueue(db, filters("band=mid"))).map((q) => q.id)).toEqual([mid]);
     expect((await listQueue(db, filters("band=low"))).map((q) => q.id)).toEqual([low, none]);
@@ -125,6 +125,7 @@ describe("queue filters", () => {
     expect(await nextQueuedId(db, b, lowest)).toBe(c);
     expect(await nextQueuedId(db, c, lowest)).toBe(d); // ties break by id
     expect(await nextQueuedId(db, a, lowest)).toBe(b);
+    expect(await nextQueuedId(db, 999_999, lowest)).toBe(b); // a missing post: back to the first
     const newest = filters("order=newest");
     expect(await nextQueuedId(db, 0, newest)).toBe(d);
     expect(await nextQueuedId(db, c, newest)).toBe(b);

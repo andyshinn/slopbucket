@@ -6,10 +6,10 @@ import Admin from "../../../../layouts/Admin.astro";
 import { ReviewError, getQueueItem, parseQueueFilters, queueFilterQuery, reassignPost, searchTools, withFilters } from "../../../../lib/review.ts";
 import { btnPrimary, card, input } from "../../../../lib/ui.ts";
 
-const id = Number(Astro.params.id);
-if (!Number.isInteger(id) || id <= 0) return Astro.redirect("/admin/queue", 302);
 // The queue filters this came with, kept for the way back.
 const filters = parseQueueFilters(Astro.url.searchParams);
+const id = Number(Astro.params.id);
+if (!Number.isInteger(id) || id <= 0) return Astro.redirect(withFilters("/admin/queue", filters), 302);
 const back = withFilters(`/admin/queue/${id}`, filters);
 
 let error: string | null = null;
