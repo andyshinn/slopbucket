@@ -18,6 +18,7 @@ on:
           - backfill
           - trigger-source
           - reclassify-queued
+          - publish-confident
       sql:
         description: "sql: one read-only statement (SELECT / WITH / EXPLAIN)"
         type: string
@@ -139,6 +140,23 @@ jobs:
 
       # One-off after a classifier change: re-run classification on queued posts nobody
       # has reviewed yet. Their extracted text is cached in R2, so nothing is re-fetched.
+      # After lowering review_threshold: publish unreviewed queued posts already at or
+      # above it, from their stored confidence. No model calls, nothing re-fetched.
+      - name: Publish confident queued posts
+        if: inputs.action == 'publish-confident'
+        working-directory: apps/ingest
+        run: |
+          # Same statements the admin status panel runs (packages/core/src/ops.ts).
+          node --input-type=module -e '
+            import { writeFileSync } from "node:fs";
+            import { PUBLISH_CONFIDENT_PREVIEW_SQL, PUBLISH_CONFIDENT_SQL } from "@slop-bucket/core";
+            writeFileSync("preview.sql", PUBLISH_CONFIDENT_PREVIEW_SQL.replace(/\s+/g, " "));
+            writeFileSync("publish.sql", PUBLISH_CONFIDENT_SQL.join(";\n") + ";\n");'
+          pnpm exec wrangler d1 execute DB --remote --json --command "$(cat preview.sql)" > preview.json
+          echo "Publishing $(jq -r '.[0].results[0] | "\(.posts) posts and \(.tools) new tools at threshold \(.threshold)"' preview.json)." | tee -a "$GITHUB_STEP_SUMMARY"
+          pnpm exec wrangler d1 execute DB --remote --file publish.sql
+          echo "Done." | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Reclassify unreviewed queued posts
         if: inputs.action == 'reclassify-queued'
         working-directory: apps/ingest

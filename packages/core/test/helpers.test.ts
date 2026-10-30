@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   type NormalizedPost,
+  autoPublishes,
   canonicalUrl,
   classificationSchema,
   githubRepoFromUrl,
@@ -151,5 +152,15 @@ describe("classificationSchema", () => {
 
   it("rejects out-of-range confidence", () => {
     expect(schema.safeParse({ ...valid, confidence: 7 }).success).toBe(false);
+  });
+});
+
+describe("autoPublishes", () => {
+  it("publishes at or above the threshold, never for other or a threshold of 1", () => {
+    expect(autoPublishes(0.8, 0.8, "agent")).toBe(true);
+    expect(autoPublishes(0.8, 0.79, "agent")).toBe(false);
+    expect(autoPublishes(0.8, 0.95, "other")).toBe(false);
+    expect(autoPublishes(1, 1, "agent")).toBe(false);
+    expect(autoPublishes(0, 0, "cli")).toBe(true);
   });
 });

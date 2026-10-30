@@ -1,6 +1,6 @@
 ---
 import { env } from "cloudflare:workers";
-import { ENABLED_SOURCES } from "@slop-bucket/core";
+import { ENABLED_SOURCES, type PublishConfidentPreview, publishConfidentPreview, publishConfidentQueued } from "@slop-bucket/core";
 import Icon from "../../components/Icon.astro";
 import Meta from "../../components/Meta.astro";
 import Notice from "../../components/Notice.astro";
@@ -32,7 +32,8 @@ import { SOURCE_LABELS, aboutDuration, btnPrimary, btnSecondary, card, input, la
 
 type Confirm =
   | { kind: "backfill"; source: string; days: number; estimate: ReturnType<typeof backfillEstimate> }
-  | ({ kind: "reclassify" } & ReclassifyPreview);
+  | ({ kind: "reclassify" } & ReclassifyPreview)
+  | ({ kind: "publish" } & PublishConfidentPreview);
 
 let error: string | null = null;
 let confirm: Confirm | null = null;
@@ -78,6 +79,13 @@ if (Astro.request.method === "POST") {
         return Astro.redirect(`/admin/status?done=reclassify&n=${n}`, 303);
       }
     }
+    if (action === "publish") {
+      if (!confirmed) confirm = { kind: "publish", ...(await publishConfidentPreview(env.DB)) };
+      else {
+        const r = await publishConfidentQueued(env.DB);
+        return Astro.redirect(`/admin/status?done=publish&n=${r.posts}&tools=${r.tools}`, 303);
+      }
+    }
     if (!confirm) throw new Error("Unknown action.");
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
@@ -88,6 +96,8 @@ if (Astro.request.method === "POST") {
 const minutes = (n: number) => `${n} ${n === 1 ? "minute" : "minutes"}`;
 const done = Astro.url.searchParams.get("done");
 const doneCount = Number(Astro.url.searchParams.get("n") ?? 0);
+const doneTools = Number(Astro.url.searchParams.get("tools") ?? 0);
+const plural = (n: number, word: string) => `${num(n)} ${n === 1 ? word : `${word}s`}`;
 const doneMessage =
   done === "run"
     ? `Started ${doneCount} fetch ${doneCount === 1 ? "job" : "jobs"}. New posts appear in the queue after classification.`
@@ -97,10 +107,12 @@ const doneMessage =
       ? `Backfill started (${doneCount} ${doneCount === 1 ? "source" : "sources"}). It runs over the next hours or days, within the AI spend cap.`
       : done === "reclassify"
         ? `${num(doneCount)} posts are waiting for classification. At ~${CLASSIFY_PER_MINUTE} a minute this takes about ${minutes(Math.ceil(doneCount / CLASSIFY_PER_MINUTE))}.`
-        : null;
+        : done === "publish"
+          ? `Published ${plural(doneCount, "post")} and ${plural(doneTools, "new tool")}.`
+          : null;
 
 async function loadMain(db: D1Database) {
-  const [statuses, counts, progress, ops, trending, model, unreviewed] = await Promise.all([
+  const [statuses, counts, progress, ops, trending, model, unreviewed, confident] = await Promise.all([
     sourceStatuses(db),
     postCounts(db),
     classifyProgress(db),
@@ -108,8 +120,9 @@ async function loadMain(db: D1Database) {
     trendingStatus(db),
     classifierModel(db),
     reclassifyPreview(db),
+    publishConfidentPreview(db),
   ]);
-  return { statuses, counts, progress, ops, trending, model, unreviewed };
+  return { statuses, counts, progress, ops, trending, model, unreviewed, confident };
 }
 // The main page's data, or null on the confirmation and backfill form screens.
 const main = !confirm && !backfillForm ? await loadMain(env.DB) : null;
@@ -186,6 +199,25 @@ const jobRow =
               <li>Posts already stored are skipped. Everything lands in the review queue while the threshold is 1.</li>
             </ul>
           </>
+        ) : confirm.kind === "publish" ? (
+          confirm.threshold >= 1 ? (
+            <>
+              <h1 class="text-xl font-bold tracking-tight">Nothing publishes at a threshold of 1</h1>
+              <p class="mt-3 text-sm text-stone-700">
+                A review threshold of 1 sends everything to review. Lower it in <a href="/admin/settings#review_threshold" class="font-semibold text-lime-800 underline">Settings</a> first, then come back.
+              </p>
+            </>
+          ) : (
+            <>
+              <h1 class="text-xl font-bold tracking-tight">Publish {plural(confirm.posts, "confident post")}?</h1>
+              <ul class="mt-3 list-disc space-y-1 pl-5 text-sm text-stone-700">
+                <li>Unreviewed queued posts with confidence at or above the review threshold, {confirm.threshold}, and a category other than "other".</li>
+                <li>Uses the confidence already stored: no model calls, no cost, done at once.</li>
+                <li>{plural(confirm.tools, "new tool")} {confirm.tools === 1 ? "goes" : "go"} public with them. Hidden tools stay hidden.</li>
+                <li>They don't count as reviewed, and nothing is unpublished if you raise the threshold later. Hide a tool from Tools if it shouldn't be public.</li>
+              </ul>
+            </>
+          )
         ) : (
           <>
             <h1 class="text-xl font-bold tracking-tight">Re-classify {num(confirm.posts)} unreviewed queued posts?</h1>
@@ -215,7 +247,9 @@ const jobRow =
             </>
           )}
           <a href="/admin/status" class={btnSecondary}>Cancel</a>
-          <button type="submit" class={btnPrimary}>{confirm.kind === "backfill" ? "Start backfill" : "Re-classify"}</button>
+          <button type="submit" class={btnPrimary} disabled={confirm.kind === "publish" && confirm.posts === 0}>
+            {confirm.kind === "backfill" ? "Start backfill" : confirm.kind === "publish" ? "Publish" : "Re-classify"}
+          </button>
         </form>
       </section>
     ) : backfillForm ? (
@@ -383,7 +417,7 @@ const jobRow =
         </section>
 
         <section aria-labelledby="trending-h" class="space-y-2.5">
-          <h2 id="trending-h" class={h2}>Trending</h2>
+          <h2 id="trending-h" class={`${h2} scroll-mt-28`}>Trending</h2>
           {(() => {
             const { trending } = main;
             const mark = runMark(trending);
@@ -416,7 +450,7 @@ const jobRow =
         </section>
 
         <section aria-labelledby="jobs-h" class="space-y-2.5">
-          <h2 id="jobs-h" class={h2}>Jobs</h2>
+          <h2 id="jobs-h" class={`${h2} scroll-mt-28`}>Jobs</h2>
           <div class={`${card} divide-y divide-stone-200 overflow-hidden`}>
             <a
               href="/admin/status?job=backfill"
@@ -440,8 +474,24 @@ const jobRow =
                 <Icon name="chevronRight" class="size-5 shrink-0 text-stone-400" />
               </button>
             </form>
+            <form method="post">
+              <input type="hidden" name="action" value="publish" />
+              <button type="submit" class={jobRow}>
+                <span class="min-w-0 flex-1">
+                  <span class="block font-semibold">Publish confident posts</span>
+                  <span class="block text-sm text-stone-500">
+                    {main.confident.threshold >= 1
+                      ? "Off while the review threshold is 1"
+                      : `${plural(main.confident.posts, "queued post")} at or above ${main.confident.threshold}, no model calls`}
+                  </span>
+                </span>
+                <Icon name="chevronRight" class="size-5 shrink-0 text-stone-400" />
+              </button>
+            </form>
           </div>
-          <p class="text-sm text-stone-500">Each job asks you to confirm on the next screen. Re-classify after changing the model, prompt or categories. Migrations, secrets and deploys stay in GitHub Actions.</p>
+          <p class="text-sm text-stone-500">
+            Each job asks you to confirm on the next screen. Re-classify after changing the model, prompt, categories or tags (it calls the model). After lowering the review threshold, Publish confident posts applies it to the queue from stored confidence. Migrations, secrets and deploys stay in GitHub Actions.
+          </p>
         </section>
       </div>
     )

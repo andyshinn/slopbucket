@@ -34,7 +34,7 @@ Built outside the plan's step list, all needed before launch: the daily trending
    - ~~Queue page improvements~~: done (Resolves to box, tag chips, reason quote, lime Approve).
    - **The public site**, following the handoff's suggested build order. Steps 1 (tokens, layout, theme, `/about`), 2 (home trending list, rows, `/avatar/[owner]`, 5-minute edge cache), 3 (filters with faceted counts, sort, `/search`, `/new`, `/category/[name]`, the phone filter dialog) and 4 (tool pages with merge redirects, the report form, per-IP rate limits) are done. The admin Reports page (handoff step 8) is done too. Step 5 (admin restyle: top bar with logo, ADMIN chip and View site; scrolling underline tabs with counts; stone neutrals; the queue polish and lime Approve came earlier in #19) is done. Step 6's Tools polish (desktop table with tiles and category badges, stacked list on phones; edit page with tile header, description count and hint, segmented Source control, "via merge" aliases, "Show all" posts, and an Other actions card) is done. The Status page restyle (model ID in the title row, mono section labels, lime progress bars, source cards with shaped status marks, run durations and the drop percentage, a muted Product Hunt card, and a Jobs list that leads to the backfill form and the re-classify confirmation) is done. **Next:** step 9, the desktop admin shell. Merge redirects (301 from a merged tool's slug) are part of the tool page.
    - ~~Reports page (admin)~~: done.
-5. **Step 7 tuning** against the backfilled data, then **step 8**: lower `review_threshold`, re-classify unreviewed posts so confident ones auto-publish, and go public.
+5. **Step 7 tuning** against the backfilled data, then **step 8**: lower `review_threshold`, press Status → Publish confident posts (uses stored confidence, no model calls) so confident queued posts publish, and go public. Re-classify only after changing the model, prompt, categories, tags or few-shot examples.
 
 ## Open issues
 
@@ -61,6 +61,7 @@ Built outside the plan's step list, all needed before launch: the daily trending
 
 - **Phone-only owner.** Every operation is an admin action or a `workflow_dispatch` workflow. Confirm before running anything that spends money or deletes data.
 - **Classifier:** GLM 5.3 Flash replaced Llama 3.3 (39% → about 80% precision). Every MCP server is in scope (`mcp-dev` / `mcp-general`), but a product that merely offers MCP is judged by its main purpose.
+- **Threshold changes don't re-classify.** Status → Publish confident posts (or `ops.yml` → `publish-confident`) applies a lowered `review_threshold` to the queue from stored confidence, with the classify job's rule (`autoPublishes` in `packages/core/src/ops.ts`). Only model, reasoning, category, tag or few-shot changes need a re-classify.
 - **Duplicate-URL reuse** needs the same classifier fingerprint (model, reasoning, prompt, categories, tags). Re-classify jobs are `force: true`.
 - **Trending:** GitHub posts count as a source, but their stars aren't counted as upvotes; stars enter only as 7-day growth. Queued tools are scored too.
 - **Tags:** Option C (four groups, Interface overlaps categories on purpose). Languages come from GitHub stats, not tags.
