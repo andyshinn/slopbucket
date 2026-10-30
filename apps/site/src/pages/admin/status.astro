@@ -1,6 +1,14 @@
 ---
 import { env } from "cloudflare:workers";
-import { ENABLED_SOURCES, type PublishConfidentPreview, publishConfidentPreview, publishConfidentQueued } from "@slop-bucket/core";
+import {
+  ENABLED_SOURCES,
+  type PublishConfidentPreview,
+  type QueueLowStarPreview,
+  publishConfidentPreview,
+  publishConfidentQueued,
+  queueLowStarPreview,
+  queueLowStarTools,
+} from "@slop-bucket/core";
 import Icon from "../../components/Icon.astro";
 import Meta from "../../components/Meta.astro";
 import Notice from "../../components/Notice.astro";
@@ -33,7 +41,8 @@ import { SOURCE_LABELS, aboutDuration, btnPrimary, btnSecondary, card, input, la
 type Confirm =
   | { kind: "backfill"; source: string; days: number; estimate: ReturnType<typeof backfillEstimate> }
   | ({ kind: "reclassify" } & ReclassifyPreview)
-  | ({ kind: "publish" } & PublishConfidentPreview);
+  | ({ kind: "publish" } & PublishConfidentPreview)
+  | ({ kind: "lowstars" } & QueueLowStarPreview);
 
 let error: string | null = null;
 let confirm: Confirm | null = null;
@@ -86,6 +95,13 @@ if (Astro.request.method === "POST") {
         return Astro.redirect(`/admin/status?done=publish&n=${r.posts}&tools=${r.tools}`, 303);
       }
     }
+    if (action === "lowstars") {
+      if (!confirmed) confirm = { kind: "lowstars", ...(await queueLowStarPreview(env.DB)) };
+      else {
+        const r = await queueLowStarTools(env.DB);
+        return Astro.redirect(`/admin/status?done=lowstars&n=${r.posts}&tools=${r.tools}`, 303);
+      }
+    }
     if (!confirm) throw new Error("Unknown action.");
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
@@ -109,10 +125,12 @@ const doneMessage =
         ? `${num(doneCount)} posts are waiting for classification. At ~${CLASSIFY_PER_MINUTE} a minute this takes about ${minutes(Math.ceil(doneCount / CLASSIFY_PER_MINUTE))}.`
         : done === "publish"
           ? `Published ${plural(doneCount, "post")} and ${plural(doneTools, "new tool")}.`
-          : null;
+          : done === "lowstars"
+            ? `Sent ${plural(doneTools, "tool")} and ${plural(doneCount, "post")} back to the review queue.`
+            : null;
 
 async function loadMain(db: D1Database) {
-  const [statuses, counts, progress, ops, trending, model, unreviewed, confident] = await Promise.all([
+  const [statuses, counts, progress, ops, trending, model, unreviewed, confident, lowStars] = await Promise.all([
     sourceStatuses(db),
     postCounts(db),
     classifyProgress(db),
@@ -121,8 +139,9 @@ async function loadMain(db: D1Database) {
     classifierModel(db),
     reclassifyPreview(db),
     publishConfidentPreview(db),
+    queueLowStarPreview(db),
   ]);
-  return { statuses, counts, progress, ops, trending, model, unreviewed, confident };
+  return { statuses, counts, progress, ops, trending, model, unreviewed, confident, lowStars };
 }
 // The main page's data, or null on the confirmation and backfill form screens.
 const main = !confirm && !backfillForm ? await loadMain(env.DB) : null;
@@ -218,6 +237,16 @@ const jobRow =
               </ul>
             </>
           )
+        ) : confirm.kind === "lowstars" ? (
+          <>
+            <h1 class="text-xl font-bold tracking-tight">Send {plural(confirm.tools, "low-star tool")} to review?</h1>
+            <ul class="mt-3 list-disc space-y-1 pl-5 text-sm text-stone-700">
+              <li>Published tools whose GitHub repo had fewer than {confirm.minStars} stars at the last trending run (or has no stars recorded yet).</li>
+              <li>They and their {plural(confirm.posts, "published post")} go back to the review queue and leave the public site until you approve them.</li>
+              <li>Tools with a post you already approved stay public.</li>
+              <li>No model calls, done at once.</li>
+            </ul>
+          </>
         ) : (
           <>
             <h1 class="text-xl font-bold tracking-tight">Re-classify {num(confirm.posts)} unreviewed queued posts?</h1>
@@ -247,8 +276,8 @@ const jobRow =
             </>
           )}
           <a href="/admin/status" class={btnSecondary}>Cancel</a>
-          <button type="submit" class={btnPrimary} disabled={confirm.kind === "publish" && confirm.posts === 0}>
-            {confirm.kind === "backfill" ? "Start backfill" : confirm.kind === "publish" ? "Publish" : "Re-classify"}
+          <button type="submit" class={btnPrimary} disabled={(confirm.kind === "publish" || confirm.kind === "lowstars") && confirm.posts === 0}>
+            {confirm.kind === "backfill" ? "Start backfill" : confirm.kind === "publish" ? "Publish" : confirm.kind === "lowstars" ? "Send to review" : "Re-classify"}
           </button>
         </form>
       </section>
@@ -488,9 +517,21 @@ const jobRow =
                 <Icon name="chevronRight" class="size-5 shrink-0 text-stone-400" />
               </button>
             </form>
+            <form method="post">
+              <input type="hidden" name="action" value="lowstars" />
+              <button type="submit" class={jobRow}>
+                <span class="min-w-0 flex-1">
+                  <span class="block font-semibold">Send low-star tools to review</span>
+                  <span class="block text-sm text-stone-500">
+                    {plural(main.lowStars.tools, "published tool")} under {main.lowStars.minStars} stars, not yet approved
+                  </span>
+                </span>
+                <Icon name="chevronRight" class="size-5 shrink-0 text-stone-400" />
+              </button>
+            </form>
           </div>
           <p class="text-sm text-stone-500">
-            Each job asks you to confirm on the next screen. Re-classify after changing the model, prompt, categories or tags (it calls the model). After lowering the review threshold, Publish confident posts applies it to the queue from stored confidence. Migrations, secrets and deploys stay in GitHub Actions.
+            Each job asks you to confirm on the next screen. Re-classify after changing the model, prompt, categories or tags (it calls the model). After lowering the review threshold, Publish confident posts applies it to the queue from stored confidence. After raising GitHub minimum stars, Send low-star tools to review applies it to tools already public. Migrations, secrets and deploys stay in GitHub Actions.
           </p>
         </section>
       </div>

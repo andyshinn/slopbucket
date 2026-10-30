@@ -2,6 +2,7 @@ import { type Classification, type ClassifyJob, type TagGroups, autoPublishes, c
 import { type FewShotExample, classifierFingerprint, classifyPost } from "./classifier.ts";
 import { getArticleText } from "./content.ts";
 import type { Deps } from "./deps.ts";
+import { USER_AGENT } from "./http.ts";
 
 interface PostRow {
   id: number;
@@ -23,8 +24,9 @@ export async function runClassifyJob(job: ClassifyJob, deps: Deps): Promise<void
   // Already routed (e.g. a redelivered message): nothing to do.
   if (!post || post.status !== "pending") return;
 
-  const [threshold, categories, model, reasoningEffort, maxFewShot, tags] = await Promise.all([
+  const [threshold, minStars, categories, model, reasoningEffort, maxFewShot, tags] = await Promise.all([
     getSetting(db, "review_threshold"),
+    getSetting(db, "github_min_stars"),
     getSetting(db, "categories"),
     getSetting(db, "model_id"),
     getSetting(db, "model_reasoning_effort"),
@@ -80,12 +82,13 @@ export async function runClassifyJob(job: ClassifyJob, deps: Deps): Promise<void
       .run();
   }
 
-  const outcome = await route(db, post, classification, threshold);
+  const outcome = await route(deps, post, classification, threshold, minStars);
   console.log(JSON.stringify({ event: "classified", post_id: post.id, via, ...outcome }));
 }
 
 /** Routing rules from docs/DESIGN.md "Routing after classification". */
-async function route(db: D1Database, post: PostRow, c: Classification, threshold: number) {
+async function route(deps: Deps, post: PostRow, c: Classification, threshold: number, minStars: number) {
+  const { db } = deps;
   const fields = [JSON.stringify(c), c.confidence, c.post_type, c.version] as const;
 
   // A "tool" the model cannot name (and has no repo for) is an article about AI
@@ -101,7 +104,10 @@ async function route(db: D1Database, post: PostRow, c: Classification, threshold
   }
 
   const toolId = await resolveTool(db, c, post);
-  const publish = autoPublishes(threshold, c.confidence, c.category);
+  // The star floor covers repos linked from any source, not only those the GitHub search finds.
+  const confident = autoPublishes(threshold, c.confidence, c.category);
+  const held = confident && (await belowStarFloor(deps, toolId, minStars));
+  const publish = confident && !held;
   const status = publish ? "published" : "queued";
   await db.batch([
     db
@@ -118,7 +124,34 @@ async function route(db: D1Database, post: PostRow, c: Classification, threshold
       )
       .bind(post.posted_at, publish ? 1 : 0, toolId),
   ]);
-  return { status, tool_id: toolId, confidence: c.confidence };
+  return { status, tool_id: toolId, confidence: c.confidence, ...(held && { held: "github_min_stars" }) };
+}
+
+/**
+ * Whether the tool's GitHub repo has fewer than `minStars` stars. Unknown counts as
+ * under (GitHub didn't answer, or the repo was renamed or deleted), so the post waits
+ * for review. Tools without a repo have no floor.
+ */
+async function belowStarFloor(deps: Deps, toolId: number, minStars: number): Promise<boolean> {
+  const tool = await deps.db.prepare("SELECT github_repo FROM tools WHERE id = ?").bind(toolId).first<{ github_repo: string | null }>();
+  if (!tool?.github_repo) return false;
+  const stars = await repoStars(tool.github_repo, deps);
+  return stars === null || stars < minStars;
+}
+
+async function repoStars(repo: string, deps: Deps): Promise<number | null> {
+  const headers: Record<string, string> = { "user-agent": USER_AGENT, accept: "application/vnd.github+json" };
+  if (deps.githubToken) headers.authorization = `Bearer ${deps.githubToken}`;
+  try {
+    const res = await deps.fetch(`https://api.github.com/repos/${repo}`, { headers, signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) throw new Error(`GET repo -> ${res.status}`);
+    const { stargazers_count } = (await res.json()) as { stargazers_count?: unknown };
+    if (typeof stargazers_count !== "number") throw new Error("no stargazers_count");
+    return stargazers_count;
+  } catch (err) {
+    console.warn(JSON.stringify({ event: "repo_stars_failed", repo, error: String(err) }));
+    return null;
+  }
 }
 
 /**

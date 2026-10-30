@@ -33,7 +33,11 @@ export const SETTING_FIELDS: SettingField[] = [
   { key: "prefilter_keywords", label: "Pre-filter keywords", help: "One per line. A post needs at least one hit (or a GitHub link, Show HN, or an AI tag on lobste.rs) to be classified.", kind: "lines", afterSave: NEXT_FETCH },
   { key: "max_fewshot", label: "Few-shot examples", help: "Most review decisions marked as examples that go into the prompt.", kind: "integer", afterSave: RECLASSIFY },
   { key: "github_topics", label: "GitHub topics", help: "One per line. Repos with any of these topics are searched daily.", kind: "lines", afterSave: NEXT_FETCH },
-  { key: "github_min_stars", label: "GitHub minimum stars", help: "Repos need at least this many stars to be classified.", kind: "integer", afterSave: NEXT_FETCH },
+  { key: "github_min_stars", label: "GitHub minimum stars", help: "The GitHub search only takes repos with at least this many stars. A post from any source about a repo with fewer goes to review instead of publishing.", kind: "integer",
+    afterSave: {
+      text: "Applies from the next fetch and to newly classified posts. To apply it to tools already public, use Send low-star tools to review.",
+      link: { href: "/admin/status#jobs-h", label: "Status → Jobs" },
+    } },
   {
     key: "tags",
     label: "Tags",
@@ -144,7 +148,7 @@ export interface ThresholdHistogram {
   buckets: ThresholdBucket[];
   /** Queued posts without a score (invalid model output); they always stay in review. */
   noScore: number;
-  /** Scored posts, not "other", that it never publishes: already reviewed, or a category since removed. */
+  /** Scored posts, not "other", that it never publishes: already reviewed, a category since removed, or a repo under the star floor. */
   held: number;
   queued: number;
   /** Queued posts Publish confident posts would publish at the current threshold. */

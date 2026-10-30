@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { autoPublishes, publishConfidentPreview, publishConfidentQueued } from "@slop-bucket/core";
+import { autoPublishes, publishConfidentPreview, publishConfidentQueued, queueLowStarPreview, queueLowStarTools } from "@slop-bucket/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import gateway from "../../../infra/ai-gateway.json";
 import {
@@ -27,7 +27,7 @@ function fakeQueue() {
 }
 
 beforeEach(async () => {
-  await db.batch(["review_decisions", "tool_aliases", "posts", "tools", "source_runs", "operations"].map((t) => db.prepare(`DELETE FROM ${t}`)));
+  await db.batch(["review_decisions", "tool_aliases", "repo_snapshots", "posts", "tools", "source_runs", "operations"].map((t) => db.prepare(`DELETE FROM ${t}`)));
 });
 
 describe("run now and backfill", () => {
@@ -180,6 +180,53 @@ describe("publish confident posts", () => {
         }
       }
     }
+  });
+});
+
+describe("github_min_stars outside the GitHub search", () => {
+  const setThreshold = (value: number) => db.prepare("UPDATE settings SET value = ? WHERE key = 'review_threshold'").bind(String(value)).run();
+  afterEach(() => setThreshold(1));
+  const statuses = async (table: string) =>
+    Object.fromEntries((await db.prepare(`SELECT id, status FROM ${table} ORDER BY id`).all<{ id: number; status: string }>()).results.map((r) => [r.id, r.status]));
+  const post = (id: number, toolId: number, status: string) =>
+    `(${id}, 'hn', '${id}', 'u', 'u', 't', '2026-10-01T00:00:00Z', '${status}', ${toolId}, 0.9, '{"category":"agent"}')`;
+  // Tool 1: 9 stars (the floor is 10). 2: 9 stars yesterday, 10 today. 3: repo, no snapshot yet. 4: no repo.
+  const seed = (status: string) =>
+    db.batch([
+      db.prepare(
+        `INSERT INTO tools (id, slug, name, status, github_repo) VALUES
+         (1, 'a', 'A', '${status}', 'o/a'), (2, 'b', 'B', '${status}', 'o/b'), (3, 'c', 'C', '${status}', 'o/c'), (4, 'd', 'D', '${status}', NULL)`,
+      ),
+      db.prepare("INSERT INTO repo_snapshots (tool_id, date, stars) VALUES (1, '2026-10-02', 9), (2, '2026-10-01', 9), (2, '2026-10-02', 10)"),
+    ]);
+
+  it("Publish confident posts leaves posts about repos under the floor in review", async () => {
+    await seed("queued");
+    await db.prepare(`INSERT INTO posts (id, source, external_id, url, canonical_url, title, posted_at, status, tool_id, confidence, classification) VALUES
+      ${post(10, 1, "queued")}, ${post(20, 2, "queued")}, ${post(30, 3, "queued")}, ${post(40, 4, "queued")}`).run();
+    await setThreshold(0.8);
+    expect(await publishConfidentPreview(db)).toEqual({ threshold: 0.8, posts: 2, tools: 2 });
+    await publishConfidentQueued(db);
+    expect(await statuses("posts")).toEqual({ 10: "queued", 20: "published", 30: "queued", 40: "published" });
+  });
+
+  it("Send low-star tools to review moves unapproved low-star tools and their published posts back to the queue", async () => {
+    await seed("published");
+    await db.batch([
+      db.prepare("INSERT INTO tools (id, slug, name, status, github_repo) VALUES (5, 'e', 'E', 'published', 'o/e'), (6, 'f', 'F', 'hidden', 'o/f')"),
+      db.prepare(`INSERT INTO posts (id, source, external_id, url, canonical_url, title, posted_at, status, tool_id, confidence, classification) VALUES
+        ${post(10, 1, "published")}, ${post(11, 1, "published")}, ${post(12, 1, "rejected")}, ${post(20, 2, "published")}, ${post(30, 3, "published")},
+        ${post(40, 4, "published")}, ${post(50, 5, "published")}, ${post(51, 5, "published")}, ${post(60, 6, "published")}`),
+      // Tool 5 (no snapshot, so under the floor) has a post you approved: it stays public.
+      db.prepare("INSERT INTO review_decisions (post_id, decision) VALUES (50, 'approve')"),
+    ]);
+    expect(await queueLowStarPreview(db)).toEqual({ minStars: 10, tools: 2, posts: 3 });
+    expect(await queueLowStarTools(db)).toEqual({ tools: 2, posts: 3 });
+    expect(await statuses("tools")).toEqual({ 1: "queued", 2: "published", 3: "queued", 4: "published", 5: "published", 6: "hidden" });
+    expect(await statuses("posts")).toEqual({
+      10: "queued", 11: "queued", 12: "rejected", 20: "published", 30: "queued", 40: "published", 50: "published", 51: "published", 60: "published",
+    });
+    expect(await queueLowStarPreview(db)).toEqual({ minStars: 10, tools: 0, posts: 0 });
   });
 });
 
