@@ -32,9 +32,12 @@ export interface TrendingInput {
   hours: number;
 }
 
-/** The formula in docs/DESIGN.md "Trending score and activity". */
+/**
+ * The formula in docs/DESIGN.md "Trending score and activity". Flags can push a
+ * lobste.rs score below zero, so net-negative engagement counts as none.
+ */
 export function trendingScore(t: TrendingInput, w: Weights): number {
-  const engagement = w.w_s * t.sources + w.w_e * Math.log1p(t.points + 2 * t.comments) + w.w_g * Math.log1p(Math.max(0, t.starsGained7d));
+  const engagement = w.w_s * t.sources + w.w_e * Math.log1p(Math.max(0, t.points + 2 * t.comments)) + w.w_g * Math.log1p(Math.max(0, t.starsGained7d));
   return engagement / Math.pow(Math.max(0, t.hours) + 2, w.g);
 }
 
@@ -57,7 +60,7 @@ export async function runTrendingJob(job: TrendingJob, deps: Deps, now = Date.no
     const today = iso(now).slice(0, 10);
     const posts = await refreshEngagement(deps, now, today, warnings);
     const repos = await snapshotRepos(deps, today, warnings);
-    const tools = await scoreTools(db, now);
+    const tools = await scoreTools(db, now, warnings);
     await finish(tools, warnings.length ? warnings.join("; ") : null);
     console.log(JSON.stringify({ event: "trending", mode: job.mode, posts, repos, tools, warnings }));
   } catch (err) {
@@ -199,7 +202,7 @@ async function githubGraphql(deps: Deps, tools: { id: number; github_repo: strin
 }
 
 /** Recomputes trending_score and is_active for every tool that is not hidden. Returns how many were scored. */
-async function scoreTools(db: D1Database, now: number): Promise<number> {
+async function scoreTools(db: D1Database, now: number, warnings: string[]): Promise<number> {
   const weights = await getSetting(db, "trending_weights");
   const { results } = await db
     .prepare(
@@ -236,14 +239,21 @@ async function scoreTools(db: D1Database, now: number): Promise<number> {
     }>();
 
   const activeSince = iso(now - ACTIVE_DAYS * DAY);
+  const unscorable: number[] = [];
   const statements = results.map((t) => {
     // Star growth needs a snapshot from a week ago; closed-source tools have no star term.
     const starsGained7d = t.is_open_source !== 0 && t.stars_now !== null && t.stars_week_ago !== null ? Math.max(0, t.stars_now - t.stars_week_ago) : 0;
     const hours = (now - Date.parse(t.last_at)) / 3_600_000;
-    const score = trendingScore({ sources: t.sources, points: t.points, comments: t.comments, starsGained7d, hours }, weights);
+    let score = trendingScore({ sources: t.sources, points: t.points, comments: t.comments, starsGained7d, hours }, weights);
+    // D1 binds NaN as NULL, which the NOT NULL column rejects and fails the whole batch.
+    if (!Number.isFinite(score)) {
+      unscorable.push(t.id);
+      score = 0;
+    }
     const active = t.last_at >= activeSince || starsGained7d > 0 ? 1 : 0;
     return db.prepare("UPDATE tools SET trending_score = ?, is_active = ? WHERE id = ?").bind(score, active, t.id);
   });
   for (let i = 0; i < statements.length; i += 100) await db.batch(statements.slice(i, i + 100));
+  if (unscorable.length) warnings.push(`trending score not a number for tools ${unscorable.join(", ")}; set to 0`);
   return results.length;
 }
