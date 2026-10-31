@@ -2,8 +2,10 @@
 import { env } from "cloudflare:workers";
 import Icon from "../../../components/Icon.astro";
 import Notice from "../../../components/Notice.astro";
+import TagsView from "../../../components/TagsView.astro";
 import Admin from "../../../layouts/Admin.astro";
 import { hueClasses } from "../../../lib/categories.ts";
+import { mapTag, tagOverview } from "../../../lib/tags-admin.ts";
 import { OTHER, TaxonomyError, canMove, categoryOverview, mergeCategory, otherShare, reorderCategory } from "../../../lib/taxonomy-admin.ts";
 import { accentLink, btnSecondary, card, input, num } from "../../../lib/ui.ts";
 
@@ -21,6 +23,11 @@ if (Astro.request.method === "POST") {
       await mergeCategory(env.DB, slug, String(form.get("into") ?? ""));
       return Astro.redirect("/admin/taxonomy?view=categories&done=moved", 303);
     }
+    if (action === "map_tag" || action === "drop_tag") {
+      const tag = String(form.get("tag") ?? "");
+      await mapTag(env.DB, tag, action === "map_tag" ? String(form.get("into") ?? "") : null);
+      return Astro.redirect(`/admin/taxonomy?done=${action === "map_tag" ? "mapped" : "dropped"}`, 303);
+    }
     throw new TaxonomyError("Unknown action.");
   } catch (err) {
     if (!(err instanceof TaxonomyError)) throw err;
@@ -29,14 +36,20 @@ if (Astro.request.method === "POST") {
   }
 }
 
-const view = Astro.url.searchParams.get("view") === "tags" ? "tags" : "categories";
-const overview = await categoryOverview(env.DB);
+const view = Astro.url.searchParams.get("view") === "categories" ? "categories" : "tags";
+const [overview, tags] = await Promise.all([categoryOverview(env.DB), tagOverview(env.DB)]);
 const share = otherShare(overview);
 const done = Astro.url.searchParams.get("done");
 const doneMessage: Record<string, string> = {
   added: "Category added. New posts can use it now.",
   merged: "Merged. Its tools and posts moved over.",
   moved: "Moved. Those tools and posts are in a listed category now.",
+  tag_added: "Tag added. Posts that suggested it have it now, and so do their tools.",
+  tag_merged: "Merged. Its tools and posts have the other tag now.",
+  tag_deleted: "Deleted. It's gone from every tool and post.",
+  group_added: "Group added.",
+  mapped: "Mapped. Those posts and tools have that tag now.",
+  dropped: "Dismissed. It's gone from those posts and tools.",
 };
 const plural = (n: number, one: string, many = `${one}s`) => `${num(n)} ${n === 1 ? one : many}`;
 const segment = (active: boolean) =>
@@ -47,7 +60,7 @@ const slugs = overview.rows.map((r) => r.slug);
 <Admin title="Tags & categories" section="taxonomy">
   <h1 class="text-lg font-semibold">Tags &amp; categories</h1>
   <nav class="mt-3 grid grid-cols-2 gap-1 rounded-lg bg-stone-100 p-1" aria-label="Tags or categories">
-    <a href="/admin/taxonomy?view=tags" aria-current={view === "tags" ? "page" : undefined} class={segment(view === "tags")}>Tags</a>
+    <a href="/admin/taxonomy" aria-current={view === "tags" ? "page" : undefined} class={segment(view === "tags")}>Tags</a>
     <a href="/admin/taxonomy?view=categories" aria-current={view === "categories" ? "page" : undefined} class={segment(view === "categories")}>Categories</a>
   </nav>
 
@@ -56,9 +69,7 @@ const slugs = overview.rows.map((r) => r.slug);
 
   {
     view === "tags" ? (
-      <div class={`${card} mt-4 p-4 text-sm text-stone-600`}>
-        The tag vocabulary is still edited as text in <a href="/admin/settings#tags" class={accentLink}>Settings → Tags</a>, with the classifier's suggestions below it.
-      </div>
+      <TagsView overview={tags} />
     ) : (
       <>
         {share !== null && (

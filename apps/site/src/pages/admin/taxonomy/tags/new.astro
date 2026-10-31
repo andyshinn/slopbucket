@@ -1,0 +1,42 @@
+---
+import { env } from "cloudflare:workers";
+import Notice from "../../../../components/Notice.astro";
+import TagFields from "../../../../components/TagFields.astro";
+import Admin from "../../../../layouts/Admin.astro";
+import { addTag, loadTagSettings, tagFieldsFromForm } from "../../../../lib/tags-admin.ts";
+import { TaxonomyError, slugify } from "../../../../lib/taxonomy-admin.ts";
+import { btnPrimary, card } from "../../../../lib/ui.ts";
+
+// Opened from "Add to {group}" (?group=) or from a model suggestion (?suggestion=).
+const suggestion = (Astro.url.searchParams.get("suggestion") ?? "").trim().toLowerCase();
+let error: string | null = null;
+let values = { ...tagFieldsFromForm(null), slug: slugify(suggestion), label: suggestion, group: Astro.url.searchParams.get("group") ?? "" };
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  values = tagFieldsFromForm(form);
+  try {
+    const slug = await addTag(env.DB, form);
+    return Astro.redirect(`/admin/taxonomy?done=tag_added#tag-${slug}`, 303);
+  } catch (err) {
+    if (!(err instanceof TaxonomyError)) throw err;
+    error = err.message;
+    Astro.response.status = 422;
+  }
+}
+const { groups } = await loadTagSettings(env.DB);
+---
+
+<Admin title="Add tag" section="taxonomy">
+  <a href="/admin/taxonomy" class="text-sm font-medium text-brand-700">← Tags</a>
+  <h1 class="mt-2 text-lg font-semibold">Add tag</h1>
+  <p class="mt-1 text-sm text-stone-600">
+    It goes last in its group. {suggestion ? `Posts that suggested "${suggestion}" get it now, and so do their tools.` : "Posts that suggested it get it now, and so do their tools."}
+    Other posts get it when they are classified again.
+  </p>
+  <form method="post" class={`${card} mt-4 space-y-4 p-4`}>
+    {error && <Notice tone="error">{error}</Notice>}
+    {suggestion && <input type="hidden" name="suggestion" value={suggestion} />}
+    <TagFields values={values} groups={groups} />
+    <button type="submit" class={`${btnPrimary} w-full`}>Add tag</button>
+  </form>
+</Admin>

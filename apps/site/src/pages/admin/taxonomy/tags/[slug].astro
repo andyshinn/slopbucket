@@ -1,0 +1,122 @@
+---
+import { env } from "cloudflare:workers";
+import Icon from "../../../../components/Icon.astro";
+import Notice from "../../../../components/Notice.astro";
+import TagFields from "../../../../components/TagFields.astro";
+import Admin from "../../../../layouts/Admin.astro";
+import { canMoveIn, deleteTag, mergeTag, reorderTag, tagFieldsFromForm, tagOverview, updateTag } from "../../../../lib/tags-admin.ts";
+import { TaxonomyError } from "../../../../lib/taxonomy-admin.ts";
+import { btnPrimary, btnReject, card, input, label, num } from "../../../../lib/ui.ts";
+
+const slug = Astro.params.slug ?? "";
+let error: { section: string; message: string } | null = null;
+let submitted: FormData | null = null;
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const action = String(form.get("action"));
+  try {
+    if (action === "save") {
+      submitted = form;
+      const saved = await updateTag(env.DB, slug, form);
+      return Astro.redirect(`/admin/taxonomy/tags/${encodeURIComponent(saved)}?done=${saved === slug ? "save" : "renamed"}`, 303);
+    }
+    if (action === "up" || action === "down") {
+      await reorderTag(env.DB, slug, action);
+      return Astro.redirect(`/admin/taxonomy/tags/${encodeURIComponent(slug)}?done=moved`, 303);
+    }
+    if (action === "merge") {
+      await mergeTag(env.DB, slug, String(form.get("into") ?? ""));
+      return Astro.redirect("/admin/taxonomy?done=tag_merged", 303);
+    }
+    if (action === "delete") {
+      await deleteTag(env.DB, slug);
+      return Astro.redirect("/admin/taxonomy?done=tag_deleted", 303);
+    }
+    throw new TaxonomyError("Unknown action.");
+  } catch (err) {
+    if (!(err instanceof TaxonomyError)) throw err;
+    error = { section: action, message: err.message };
+    Astro.response.status = 422;
+  }
+}
+
+const { groups } = await tagOverview(env.DB);
+const group = groups.find((g) => g.tags.some((t) => t.slug === slug));
+const tag = group?.tags.find((t) => t.slug === slug);
+if (!group || !tag) return Astro.redirect("/admin/taxonomy", 302);
+const values = submitted ? tagFieldsFromForm(submitted) : { label: tag.label, slug, group: group.slug };
+const done = Astro.url.searchParams.get("done");
+const doneMessage: Record<string, string> = {
+  save: "Saved.",
+  renamed: "Renamed. Its tools, posts and review corrections have the new slug.",
+  moved: "Moved.",
+};
+const tools = `${num(tag.tools)} ${tag.tools === 1 ? "tool" : "tools"}`;
+const lastInGroup = group.tags.length === 1;
+const moveButton = "flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg text-sm font-medium text-stone-700 ring-1 ring-stone-300 ring-inset hover:bg-stone-50 disabled:opacity-40";
+---
+
+<Admin title={`Edit ${tag.label}`} section="taxonomy">
+  <a href={`/admin/taxonomy#tag-${slug}`} class="text-sm font-medium text-brand-700">← Tags</a>
+  <h1 class="mt-2 text-lg font-semibold">{tag.label}</h1>
+  <p class="mt-1 text-sm text-stone-600">
+    {group.label} · {tools} that aren't hidden. <a href={`/?tag=${slug}`} class="font-medium text-brand-700">See it on the site</a>
+  </p>
+
+  {done && doneMessage[done] && <div class="mt-4"><Notice>{doneMessage[done]}</Notice></div>}
+
+  <form method="post" class={`${card} mt-4 space-y-4 p-4`}>
+    <input type="hidden" name="action" value="save" />
+    {error?.section === "save" && <Notice tone="error">{error.message}</Notice>}
+    <TagFields values={values} groups={groups} slugHelp="Changing it renames the tag on its tools and posts. Old ?tag= links stop matching." />
+    {lastInGroup && <p class="text-xs text-stone-500">It's the only tag in {group.label}: moving it to another group removes {group.label}.</p>}
+    <button type="submit" class={`${btnPrimary} w-full`}>Save changes</button>
+  </form>
+
+  <form method="post" class={`${card} mt-4 p-4`}>
+    <p class={label}>Position in {group.label}</p>
+    <div class="mt-2 flex gap-2">
+      <button type="submit" name="action" value="up" disabled={!canMoveIn(group.tags, slug, "up")} class={moveButton}>
+        <Icon name="arrowUp" class="size-4" /> Move up
+      </button>
+      <button type="submit" name="action" value="down" disabled={!canMoveIn(group.tags, slug, "down")} class={moveButton}>
+        <Icon name="arrowDown" class="size-4" /> Move down
+      </button>
+    </div>
+  </form>
+
+  <section class="mt-6">
+    <h2 class="text-lg font-semibold">Merge into another tag</h2>
+    <form method="post" class={`${card} mt-2 space-y-3 p-4`}>
+      <input type="hidden" name="action" value="merge" />
+      {error?.section === "merge" && <Notice tone="error">{error.message}</Notice>}
+      <p class="text-sm text-stone-600">Its {tools} and its posts get the tag you pick instead, review corrections too, then {tag.label} leaves the list. There is no undo.</p>
+      <div>
+        <label for="into" class={label}>Merge into</label>
+        <select id="into" name="into" required class={`${input} mt-1`}>
+          <option value="">Pick a tag</option>
+          {
+            groups.map((g) => (
+              <optgroup label={g.label}>
+                {g.tags.filter((t) => t.slug !== slug).map((t) => <option value={t.slug}>{t.label}</option>)}
+              </optgroup>
+            ))
+          }
+        </select>
+      </div>
+      <button type="submit" class={`${btnReject} w-full`}>Merge and remove {tag.label}</button>
+    </form>
+  </section>
+
+  <section class="mt-6">
+    <h2 class="text-lg font-semibold">Delete</h2>
+    <form method="post" class={`${card} mt-2 space-y-3 p-4`}>
+      <input type="hidden" name="action" value="delete" />
+      {error?.section === "delete" && <Notice tone="error">{error.message}</Notice>}
+      <p class="text-sm text-stone-600">
+        Takes {tag.label} off its {tools}, its posts and review corrections, and out of the list.{lastInGroup && ` ${group.label} goes too, since it has no other tags.`} There is no undo.
+      </p>
+      <button type="submit" class={`${btnReject} w-full`}>Delete {tag.label}</button>
+    </form>
+  </section>
+</Admin>

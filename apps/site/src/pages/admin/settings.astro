@@ -3,16 +3,14 @@ import { env } from "cloudflare:workers";
 import Notice from "../../components/Notice.astro";
 import ThresholdHistogram from "../../components/ThresholdHistogram.astro";
 import Admin from "../../layouts/Admin.astro";
-import { type TagGroups, settingSchemas } from "@slop-bucket/core";
+import { settingSchemas } from "@slop-bucket/core";
 import {
   REASONING_LEVELS,
   SETTING_FIELDS,
   SettingError,
   WEIGHT_KEYS,
-  formatTagGroups,
   loadSettings,
   saveSetting,
-  suggestedTags,
   queuedScores,
   thresholdHistogram,
 } from "../../lib/settings-admin.ts";
@@ -35,7 +33,7 @@ if (Astro.request.method === "POST") {
 }
 
 const saved = Astro.url.searchParams.get("saved");
-const [values, suggestions, scores] = await Promise.all([loadSettings(env.DB), suggestedTags(env.DB), queuedScores(env.DB)]);
+const [values, scores] = await Promise.all([loadSettings(env.DB), queuedScores(env.DB)]);
 // Validated, not cast: a bad stored value hides the histogram but leaves the page usable to fix it.
 const threshold = settingSchemas.review_threshold.safeParse(values.review_threshold);
 const histogram = threshold.success ? thresholdHistogram(scores, threshold.data) : null;
@@ -45,7 +43,6 @@ const WEIGHT_LABELS: Record<string, string> = { w_s: "Sources", w_e: "Engagement
 function shown(key: string, name = "value"): string {
   if (failed?.key === key) return String(failed.form.get(name) ?? "");
   const v = values[key];
-  if (key === "tags") return formatTagGroups((v ?? []) as TagGroups);
   if (name !== "value") return String((v as Record<string, unknown> | undefined)?.[name] ?? "");
   return Array.isArray(v) ? v.join("\n") : String(v ?? "");
 }
@@ -54,7 +51,7 @@ function shown(key: string, name = "value"): string {
 <Admin title="Settings" section="settings">
   <h1 class="text-lg font-semibold">Settings</h1>
   <p class="mt-1 text-sm text-stone-600">Changes apply to the next job; no deploy needed. Saving one says how to apply it to posts already stored.</p>
-  <p class="mt-2 text-sm text-stone-600">Categories are on <a href="/admin/taxonomy?view=categories" class={accentLink}>Tags &amp; categories</a>.</p>
+  <p class="mt-2 text-sm text-stone-600">Tags and categories are on <a href="/admin/taxonomy" class={accentLink}>Tags &amp; categories</a>.</p>
 
   <div class="mt-4 space-y-4">
     {
@@ -93,9 +90,7 @@ function shown(key: string, name = "value"): string {
               <label for={`${f.key}-value`} class={label}>
                 {f.label}
               </label>
-              {f.kind === "taggroups" ? (
-                <textarea id={`${f.key}-value`} name="value" rows="18" class={`${input} mt-1 font-mono text-sm`} autocapitalize="off" spellcheck="false">{shown(f.key)}</textarea>
-              ) : f.kind === "lines" ? (
+              {f.kind === "lines" ? (
                 <textarea id={`${f.key}-value`} name="value" rows="6" class={`${input} mt-1 font-mono text-sm`} autocapitalize="off" spellcheck="false">{shown(f.key)}</textarea>
               ) : f.kind === "reasoning" ? (
                 <select id={`${f.key}-value`} name="value" class={`${input} mt-1`}>
@@ -121,19 +116,6 @@ function shown(key: string, name = "value"): string {
             </>
           )}
           <p class="mt-2 text-xs text-stone-500">{f.help}</p>
-          {f.kind === "taggroups" && suggestions.length > 0 && (
-            <div class="mt-3 rounded-lg bg-stone-50 p-3">
-              <p class="text-sm font-medium text-stone-900">Suggested by the classifier</p>
-              <p class="mt-0.5 text-xs text-stone-500">Tags it wanted but couldn't use, with how many queued or published posts asked. Add any that matter above.</p>
-              <ul class="mt-2 flex flex-wrap gap-1.5">
-                {suggestions.map((t) => (
-                  <li class="rounded-md bg-white px-2 py-0.5 font-mono text-xs text-stone-700 ring-1 ring-stone-200 ring-inset">
-                    {t.tag} <span class="text-stone-400">{t.n}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
           <button type="submit" class={`${btnPrimary} mt-3 w-full`}>Save {f.label.toLowerCase()}</button>
           {f.key === "review_threshold" && histogram && threshold.success && <ThresholdHistogram histogram={histogram} threshold={threshold.data} />}
         </form>

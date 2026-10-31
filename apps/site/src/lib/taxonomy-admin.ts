@@ -54,7 +54,7 @@ export function otherShare(overview: CategoryOverview): number | null {
   return share > OTHER_WARN_SHARE ? share : null;
 }
 
-const slugify = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+export const slugify = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
 /** The fields of the add and edit forms. */
 export const CATEGORY_FIELD_KEYS = ["slug", "label", "hue", "hint", "blurb"] as const;
