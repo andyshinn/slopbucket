@@ -3,7 +3,7 @@ import { parseHTML } from "linkedom";
 import { z } from "zod";
 import { githubRepoFromUrl } from "@slop-bucket/core";
 import type { Deps } from "./deps.ts";
-import { USER_AGENT, getJson } from "./http.ts";
+import { USER_AGENT, getJson, githubHeaders } from "./http.ts";
 
 // About 3,000 tokens.
 export const MAX_TEXT_CHARS = 12_000;
@@ -72,8 +72,7 @@ async function extract(url: string, deps: Deps): Promise<string> {
 }
 
 async function fetchReadme(repo: string, deps: Deps): Promise<string> {
-  const headers: Record<string, string> = { "user-agent": USER_AGENT, accept: "application/vnd.github.raw+json" };
-  if (deps.githubToken) headers.authorization = `Bearer ${deps.githubToken}`;
+  const headers = githubHeaders(deps.githubToken, "application/vnd.github.raw+json");
   const api = await deps.fetch(`https://api.github.com/repos/${repo}/readme`, { headers, signal: AbortSignal.timeout(15_000) });
   if (api.ok) return readCapped(api);
   // Unauthenticated API calls are rate limited; raw.githubusercontent.com is not.

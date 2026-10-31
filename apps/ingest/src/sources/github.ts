@@ -1,7 +1,7 @@
 import { parseHTML } from "linkedom";
 import { z } from "zod";
 import { type NormalizedPost, getSetting } from "@slop-bucket/core";
-import { USER_AGENT } from "../http.ts";
+import { USER_AGENT, githubHeaders } from "../http.ts";
 import type { Adapter, SourceContext } from "./types.ts";
 
 const DAY = 86_400_000;
@@ -54,8 +54,7 @@ function toPost(repo: z.infer<typeof repoSchema>): NormalizedPost {
 
 async function searchPage(ctx: SourceContext, q: string, page: number): Promise<z.infer<typeof searchSchema>> {
   const params = new URLSearchParams({ q, sort: "stars", order: "desc", per_page: String(PAGE_SIZE), page: String(page) });
-  const headers: Record<string, string> = { "user-agent": USER_AGENT, accept: "application/vnd.github+json" };
-  if (ctx.githubToken) headers.authorization = `Bearer ${ctx.githubToken}`;
+  const headers = githubHeaders(ctx.githubToken);
   for (let attempt = 1; ; attempt++) {
     const res = await ctx.fetch(`https://api.github.com/search/repositories?${params}`, { headers, signal: AbortSignal.timeout(15_000) });
     if (res.ok) return searchSchema.parse(await res.json());

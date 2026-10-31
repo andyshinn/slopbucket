@@ -1,6 +1,6 @@
 import { type TrendingJob, getSetting } from "@slop-bucket/core";
 import type { Deps } from "./deps.ts";
-import { USER_AGENT, getJson } from "./http.ts";
+import { GITHUB_REPO, type RepoStats, USER_AGENT, fetchRepoStats, getJson, upsertRepoSnapshot } from "./http.ts";
 
 const DAY = 86_400_000;
 /** Posts from this window count toward S, P and C. */
@@ -125,21 +125,12 @@ async function refreshEngagement(deps: Deps, now: number, today: string, warning
   return counts.size;
 }
 
-interface RepoStats {
-  stars: number;
-  forks: number;
-  language: string | null;
-  license: string | null;
-}
-
-const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
-
 /** Today's repo_snapshots row for each active, visible tool with a GitHub repo. */
 async function snapshotRepos(deps: Deps, today: string, warnings: string[]): Promise<number> {
   const { results } = await deps.db
     .prepare("SELECT id, github_repo FROM tools WHERE github_repo IS NOT NULL AND status != 'hidden' AND is_active = 1 ORDER BY trending_score DESC, id")
     .all<{ id: number; github_repo: string }>();
-  const tools = results.filter((t) => REPO.test(t.github_repo));
+  const tools = results.filter((t) => GITHUB_REPO.test(t.github_repo));
   const stats = new Map<number, RepoStats>();
 
   if (deps.githubToken) {
@@ -153,26 +144,14 @@ async function snapshotRepos(deps: Deps, today: string, warnings: string[]): Pro
     }
   } else {
     for (const t of tools.slice(0, UNAUTHENTICATED_REPO_LIMIT)) {
-      const res = await deps.fetch(`https://api.github.com/repos/${t.github_repo}`, {
-        headers: { "user-agent": USER_AGENT, accept: "application/vnd.github+json" },
-        signal: AbortSignal.timeout(15_000),
-      });
-      if (res.status === 403 || res.status === 429) break;
-      if (!res.ok) continue;
-      const r = (await res.json()) as { stargazers_count: number; forks_count: number; language: string | null; license: { spdx_id: string } | null };
-      stats.set(t.id, { stars: r.stargazers_count, forks: r.forks_count, language: r.language, license: r.license?.spdx_id ?? null });
+      const r = await fetchRepoStats(deps.fetch, undefined, t.github_repo).catch(() => "missing" as const);
+      if (r === "limited") break;
+      if (r !== "missing") stats.set(t.id, r);
     }
     if (stats.size < tools.length) warnings.push(`GitHub stats for ${stats.size} of ${tools.length} repos; add the GH_API_TOKEN secret for the rest`);
   }
 
-  const statements = [...stats].map(([toolId, s]) =>
-    deps.db
-      .prepare(
-        `INSERT INTO repo_snapshots (tool_id, date, stars, forks, language, license) VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT (tool_id, date) DO UPDATE SET stars = excluded.stars, forks = excluded.forks, language = excluded.language, license = excluded.license`,
-      )
-      .bind(toolId, today, s.stars, s.forks, s.language, s.license),
-  );
+  const statements = [...stats].map(([toolId, s]) => upsertRepoSnapshot(deps.db, toolId, today, s));
   for (let i = 0; i < statements.length; i += 100) await deps.db.batch(statements.slice(i, i + 100));
   return stats.size;
 }

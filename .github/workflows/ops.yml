@@ -19,6 +19,7 @@ on:
           - trigger-source
           - reclassify-queued
           - publish-confident
+          - queue-low-stars
       sql:
         description: "sql: one read-only statement (SELECT / WITH / EXPLAIN)"
         type: string
@@ -144,6 +145,7 @@ jobs:
         if: inputs.action == 'publish-confident'
         working-directory: apps/ingest
         run: |
+          set -euo pipefail
           # Same statements the admin status panel runs (packages/core/src/ops.ts).
           node --input-type=module -e '
             import { writeFileSync } from "node:fs";
@@ -151,8 +153,29 @@ jobs:
             writeFileSync("preview.sql", PUBLISH_CONFIDENT_PREVIEW_SQL.replace(/\s+/g, " "));
             writeFileSync("publish.sql", PUBLISH_CONFIDENT_SQL.join(";\n") + ";\n");'
           pnpm exec wrangler d1 execute DB --remote --json --command "$(cat preview.sql)" > preview.json
-          echo "Publishing $(jq -r '.[0].results[0] | "\(.posts) posts and \(.tools) new tools at threshold \(.threshold)"' preview.json)." | tee -a "$GITHUB_STEP_SUMMARY"
+          # jq -e fails the step (before any write) if the preview can't be read.
+          summary=$(jq -er '.[0].results[0] // error("no preview row") | "\(.posts) posts and \(.tools) new tools at threshold \(.threshold)"' preview.json)
+          echo "Publishing $summary." | tee -a "$GITHUB_STEP_SUMMARY"
           pnpm exec wrangler d1 execute DB --remote --file publish.sql
+          echo "Done." | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Send low-star tools to review
+        if: inputs.action == 'queue-low-stars'
+        working-directory: apps/ingest
+        run: |
+          set -euo pipefail
+          # Same statements the admin status panel runs (packages/core/src/ops.ts). There is
+          # no confirm step here: the counts are logged as it runs. To see them first, use
+          # Status → Jobs → Send low-star tools to review, which asks before it changes anything.
+          node --input-type=module -e '
+            import { writeFileSync } from "node:fs";
+            import { QUEUE_LOW_STAR_PREVIEW_SQL, QUEUE_LOW_STAR_SQL } from "@slop-bucket/core";
+            writeFileSync("preview.sql", QUEUE_LOW_STAR_PREVIEW_SQL.replace(/\s+/g, " "));
+            writeFileSync("queue.sql", QUEUE_LOW_STAR_SQL.join(";\n") + ";\n");'
+          pnpm exec wrangler d1 execute DB --remote --json --command "$(cat preview.sql)" > preview.json
+          summary=$(jq -er '.[0].results[0] // error("no preview row") | "\(.tools) tools and \(.posts) posts under \(.minStars) stars"' preview.json)
+          echo "Sending $summary back to review." | tee -a "$GITHUB_STEP_SUMMARY"
+          pnpm exec wrangler d1 execute DB --remote --file queue.sql
           echo "Done." | tee -a "$GITHUB_STEP_SUMMARY"
 
       # One-off after a classifier change: re-run classification on queued posts nobody
