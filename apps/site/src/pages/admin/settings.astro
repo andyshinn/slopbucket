@@ -16,7 +16,7 @@ import {
   queuedScores,
   thresholdHistogram,
 } from "../../lib/settings-admin.ts";
-import { btnPrimary, card, input, label } from "../../lib/ui.ts";
+import { accentLink, btnPrimary, card, input, label } from "../../lib/ui.ts";
 
 // Errors and the submitted (unsaved) values, so a rejected edit is not lost.
 let failed: { key: string; message: string; form: FormData } | null = null;
@@ -54,6 +54,7 @@ function shown(key: string, name = "value"): string {
 <Admin title="Settings" section="settings">
   <h1 class="text-lg font-semibold">Settings</h1>
   <p class="mt-1 text-sm text-stone-600">Changes apply to the next job; no deploy needed. Saving one says how to apply it to posts already stored.</p>
+  <p class="mt-2 text-sm text-stone-600">Categories are on <a href="/admin/taxonomy?view=categories" class={accentLink}>Tags &amp; categories</a>.</p>
 
   <div class="mt-4 space-y-4">
     {

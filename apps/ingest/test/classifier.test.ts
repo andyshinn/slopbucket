@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyPost, modelText } from "../src/classifier.ts";
+import { classifyPost, modelText, systemPrompt } from "../src/classifier.ts";
 
 const valid = {
   reason: "A CLI coding agent.", is_ai_dev_tool: true, post_type: "launch", tool_name: "Patchwork", homepage_url: null,
@@ -11,8 +11,17 @@ const TAGS = [
 ];
 const input = {
   model: "@cf/x/y", categories: ["agent", "ide", "cli", "mcp-dev", "mcp-general", "other"], tags: TAGS,
+  categoryInfo: { cli: { label: "CLI", hue: "amber" as const, hint: "AI command-line tools", blurb: "" } },
   post: { source: "hn", title: "t", url: "u" }, text: "", fewShot: [],
 };
+
+describe("systemPrompt", () => {
+  it("describes each category from category_info, and lists one without an entry bare", () => {
+    const prompt = systemPrompt(input.categories, input.categoryInfo, TAGS);
+    expect(prompt).toContain("  - cli: AI command-line tools\n");
+    expect(prompt).toContain("  - ide\n");
+  });
+});
 
 describe("modelText", () => {
   it("reads the classic and the OpenAI-style result shapes", () => {

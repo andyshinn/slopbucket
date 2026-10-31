@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { getSetting, publishConfidentPreview } from "@slop-bucket/core";
 import { describe, expect, it } from "vitest";
-import { SETTING_FIELDS, SettingError, formatTagGroups, loadSettings, saveSetting, queuedScores, suggestedTags, thresholdHistogram } from "../src/lib/settings-admin.ts";
+import { SETTING_FIELDS, SettingError, TAXONOMY_KEYS, formatTagGroups, loadSettings, saveSetting, queuedScores, suggestedTags, thresholdHistogram } from "../src/lib/settings-admin.ts";
 
 const db = env.DB;
 const form = (entries: Record<string, string>) => {
@@ -13,7 +13,7 @@ const form = (entries: Record<string, string>) => {
 describe("saveSetting", () => {
   it("covers every setting key", async () => {
     const stored = await loadSettings(db);
-    expect(SETTING_FIELDS.map((f) => f.key).sort()).toEqual(Object.keys(stored).sort());
+    expect([...SETTING_FIELDS.map((f) => f.key), ...TAXONOMY_KEYS].sort()).toEqual(Object.keys(stored).sort());
   });
 
   it("saves numbers, lines, weights and reasoning levels", async () => {
@@ -36,9 +36,7 @@ describe("saveSetting", () => {
     ["review_threshold", { value: "" }],
     ["max_fewshot", { value: "2.5" }],
     ["github_min_stars", { value: "-1" }],
-    ["categories", { value: "agent\ncli" }], // missing "other"
-    ["categories", { value: "Agent\nother" }], // not lowercase
-    ["categories", { value: "cli\ncli\nother" }],
+    ["categories", { value: "agent\nother" }], // edited on the taxonomy page
     ["model_id", { value: "" }],
     ["model_reasoning_effort", { value: "extreme" }],
     ["trending_weights", { w_s: "1", w_e: "1", w_g: "", g: "1" }],

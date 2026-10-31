@@ -1,5 +1,13 @@
 import { z } from "zod";
-import { type Classification, type TagGroups, classificationJsonSchema, classificationSchema, tagSlugs } from "@slop-bucket/core";
+import {
+  type CategoryInfo,
+  type Classification,
+  type TagGroups,
+  categoryDisplay,
+  classificationJsonSchema,
+  classificationSchema,
+  tagSlugs,
+} from "@slop-bucket/core";
 import type { RunModel } from "./deps.ts";
 
 export interface PostInput {
@@ -17,25 +25,13 @@ export type ClassifyResult =
   | { ok: true; value: Classification; raw: string }
   | { ok: false; raw: string; error: string };
 
-const CATEGORY_HINTS: Record<string, string> = {
-  agent: "coding agents that plan and make changes on their own",
-  "agent-addon":
-    "add-ons installed into a coding agent (Claude Code, Codex, Cursor and similar): plugins, skills, hooks, mods, status lines, rule and prompt packs; security add-ons are agent-security",
-  "agent-tools":
-    "tools made for coding agents that run alongside them: running agents in parallel, dashboards and monitoring, usage and cost tracking, remote control, sandboxes for coding agents; security tools are agent-security",
-  "agent-security":
-    "tools that keep coding agents safe: guardrails and policy gates, blocking dangerous commands, catching leaked secrets, audit trails of what an agent did, pinning MCP tools",
-  "review-testing": "AI code review, test generation, and checking AI-written code",
-  "memory-context": "memory for coding agents, codebase docs or indexes made for agents, and tools that keep an agent's context small",
-  ide: "AI IDEs and editor extensions",
-  cli: "AI command-line tools whose job fits none of the more specific categories",
-  "mcp-dev": "MCP servers for software development work (code hosts, databases, deployment, testing, error tracking, docs)",
-  "mcp-general": "MCP servers for anything else (data, analytics, research, productivity, commerce)",
-  other: "an in-scope tool that fits none of the other categories",
-};
-
-export function systemPrompt(categories: readonly string[], tags: TagGroups): string {
-  const categoryLines = categories.map((c) => `  - ${c}${CATEGORY_HINTS[c] ? `: ${CATEGORY_HINTS[c]}` : ""}`).join("\n");
+export function systemPrompt(categories: readonly string[], categoryInfo: CategoryInfo, tags: TagGroups): string {
+  const categoryLines = categories
+    .map((c) => {
+      const { hint } = categoryDisplay(c, categoryInfo);
+      return `  - ${c}${hint ? `: ${hint}` : ""}`;
+    })
+    .join("\n");
   const tagLines = tags
     .map((g) => `  - ${g.label}${g.hint ? ` (${g.hint})` : ""}: ${g.tags.map((t) => (t.label.toLowerCase() === t.slug ? t.slug : `${t.slug} (${t.label})`)).join(", ")}`)
     .join("\n");
@@ -86,11 +82,17 @@ export function userPrompt(post: PostInput, text: string): string {
 
 /**
  * Identifies the classifier setup a result came from: model, reasoning effort, and the
- * system prompt (which embeds the categories and tag vocabulary). Few-shot examples are left out on purpose:
+ * system prompt (which embeds the categories with their descriptions, and the tag vocabulary). Few-shot examples are left out on purpose:
  * they change with every review, and would stop duplicate-URL reuse almost entirely.
  */
-export async function classifierFingerprint(model: string, reasoningEffort: string, categories: readonly string[], tags: TagGroups): Promise<string> {
-  const data = new TextEncoder().encode(JSON.stringify([model, reasoningEffort, systemPrompt(categories, tags)]));
+export async function classifierFingerprint(
+  model: string,
+  reasoningEffort: string,
+  categories: readonly string[],
+  categoryInfo: CategoryInfo,
+  tags: TagGroups,
+): Promise<string> {
+  const data = new TextEncoder().encode(JSON.stringify([model, reasoningEffort, systemPrompt(categories, categoryInfo, tags)]));
   const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", data));
   return [...hash.slice(0, 8)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
@@ -110,6 +112,7 @@ export async function classifyPost(
   input: {
     model: string;
     categories: readonly string[];
+    categoryInfo: CategoryInfo;
     tags: TagGroups;
     post: PostInput;
     text: string;
@@ -120,7 +123,7 @@ export async function classifyPost(
   ai: RunModel,
 ): Promise<ClassifyResult> {
   const messages = [
-    { role: "system", content: systemPrompt(input.categories, input.tags) },
+    { role: "system", content: systemPrompt(input.categories, input.categoryInfo, input.tags) },
     ...input.fewShot.flatMap((ex) => [
       { role: "user", content: userPrompt(ex.post, "(omitted in example)") },
       { role: "assistant", content: JSON.stringify(ex.output) },

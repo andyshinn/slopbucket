@@ -1,0 +1,59 @@
+---
+import { CATEGORY_HUES } from "@slop-bucket/core";
+import { hueClasses } from "../lib/categories.ts";
+import type { CategoryFieldValues } from "../lib/taxonomy-admin.ts";
+import { input, label } from "../lib/ui.ts";
+
+interface Props {
+  values: CategoryFieldValues;
+  /** "other" keeps its slug: the classifier and the review rules rely on it. */
+  lockSlug?: boolean;
+  /** Shown under the slug when editing: what a rename does. */
+  slugHelp?: string;
+}
+const { values, lockSlug = false, slugHelp } = Astro.props;
+---
+
+<div>
+  <label for="label" class={label}>Label</label>
+  <input id="label" name="label" value={values.label} required class={`${input} mt-1`} autocomplete="off" />
+</div>
+<div>
+  <label for="slug" class={label}>Slug <span class="font-normal text-stone-500">(public URL: /category/slug)</span></label>
+  <input
+    id="slug"
+    name="slug"
+    value={values.slug}
+    required
+    readonly={lockSlug}
+    aria-describedby={slugHelp ? "slug-help" : undefined}
+    class={`${input} mt-1 font-mono text-sm ${lockSlug ? "bg-stone-50 text-stone-500" : ""}`}
+    autocomplete="off"
+    autocapitalize="off"
+  />
+  {slugHelp && <p id="slug-help" class="mt-1 text-xs text-stone-500">{slugHelp}</p>}
+</div>
+<fieldset>
+  <legend class={label}>Color</legend>
+  <div class="mt-2 flex flex-wrap gap-1">
+    {
+      CATEGORY_HUES.map((hue) => (
+        <label class="flex size-11 cursor-pointer items-center justify-center rounded-lg ring-stone-900 has-checked:ring-2 has-focus-visible:outline-2 has-focus-visible:outline-lime-600" title={hue}>
+          <input type="radio" name="hue" value={hue} checked={values.hue === hue} required class="sr-only" />
+          <span class={`size-6 rounded-full ${hueClasses(hue).dot}`} aria-hidden="true" />
+          <span class="sr-only">{hue}</span>
+        </label>
+      ))
+    }
+  </div>
+</fieldset>
+<div>
+  <label for="hint" class={label}>Classifier description</label>
+  <textarea id="hint" name="hint" rows="3" aria-describedby="hint-help" class={`${input} mt-1`}>{values.hint}</textarea>
+  <p id="hint-help" class="mt-1 text-xs text-stone-500">What the model reads to pick this category. Say what belongs here, and where look-alikes go instead.</p>
+</div>
+<div>
+  <label for="blurb" class={label}>Public description</label>
+  <input id="blurb" name="blurb" value={values.blurb} aria-describedby="blurb-help" class={`${input} mt-1`} autocomplete="off" />
+  <p id="blurb-help" class="mt-1 text-xs text-stone-500">One line under the title on the category page.</p>
+</div>

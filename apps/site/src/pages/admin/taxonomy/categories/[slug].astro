@@ -1,0 +1,85 @@
+---
+import { env } from "cloudflare:workers";
+import CategoryFields from "../../../../components/CategoryFields.astro";
+import Notice from "../../../../components/Notice.astro";
+import Admin from "../../../../layouts/Admin.astro";
+import { OTHER, TaxonomyError, categoryOverview, fieldsFromForm, mergeCategory, updateCategory } from "../../../../lib/taxonomy-admin.ts";
+import { btnPrimary, btnReject, card, input, label, num } from "../../../../lib/ui.ts";
+
+const slug = Astro.params.slug ?? "";
+let error: { section: string; message: string } | null = null;
+let submitted: FormData | null = null;
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const action = String(form.get("action"));
+  try {
+    if (action === "save") {
+      submitted = form;
+      const saved = await updateCategory(env.DB, slug, form);
+      return Astro.redirect(`/admin/taxonomy/categories/${encodeURIComponent(saved)}?done=${saved === slug ? "save" : "renamed"}`, 303);
+    }
+    if (action === "merge") {
+      await mergeCategory(env.DB, slug, String(form.get("into") ?? ""));
+      return Astro.redirect("/admin/taxonomy?view=categories&done=merged", 303);
+    }
+    throw new TaxonomyError("Unknown action.");
+  } catch (err) {
+    if (!(err instanceof TaxonomyError)) throw err;
+    error = { section: action, message: err.message };
+    Astro.response.status = 422;
+  }
+}
+
+const { rows } = await categoryOverview(env.DB);
+const category = rows.find((r) => r.slug === slug);
+if (!category) return Astro.redirect("/admin/taxonomy?view=categories", 302);
+const values = submitted ? fieldsFromForm(submitted) : { slug, label: category.label, hue: category.hue, hint: category.hint, blurb: category.blurb };
+const others = rows.filter((r) => r.slug !== slug);
+const done = Astro.url.searchParams.get("done");
+const doneMessage: Record<string, string> = {
+  save: "Saved.",
+  renamed: "Renamed. Its tools, posts and review corrections moved to the new slug.",
+};
+const stored = `${num(category.tools)} ${category.tools === 1 ? "tool" : "tools"} and ${num(category.queued)} queued ${category.queued === 1 ? "post" : "posts"}`;
+---
+
+<Admin title={`Edit ${category.label}`} section="taxonomy">
+  <a href="/admin/taxonomy?view=categories" class="text-sm font-medium text-brand-700">← Categories</a>
+  <h1 class="mt-2 text-lg font-semibold">{category.label}</h1>
+  <p class="mt-1 text-sm text-stone-600">{stored}. <a href={`/admin/tools?category=${slug}`} class="font-medium text-brand-700">See its tools</a></p>
+
+  {done && doneMessage[done] && <div class="mt-4"><Notice>{doneMessage[done]}</Notice></div>}
+
+  <form method="post" class={`${card} mt-4 space-y-4 p-4`}>
+    <input type="hidden" name="action" value="save" />
+    {error?.section === "save" && <Notice tone="error">{error.message}</Notice>}
+    <CategoryFields
+      values={values}
+      lockSlug={slug === OTHER}
+      slugHelp={slug === OTHER ? "Other keeps its slug: the classifier and review rules rely on it." : "Changing it renames the category and moves its tools and posts along. Old /category links stop working."}
+    />
+    <button type="submit" class={`${btnPrimary} w-full`}>Save changes</button>
+  </form>
+
+  {
+    slug !== OTHER && (
+      <section class="mt-6">
+        <h2 class="text-lg font-semibold">Merge into another category</h2>
+        <form method="post" class={`${card} mt-2 space-y-3 p-4`}>
+          <input type="hidden" name="action" value="merge" />
+          {error?.section === "merge" && <Notice tone="error">{error.message}</Notice>}
+          <p class="text-sm text-stone-600">
+            Moves its {stored} into the category you pick, rewrites review corrections that used it, then removes {category.label} from the list. There is no undo.
+          </p>
+          <div>
+            <label for="into" class={label}>Move them into</label>
+            <select id="into" name="into" class={`${input} mt-1`}>
+              {others.map((c) => <option value={c.slug} selected={c.slug === OTHER}>{c.label}</option>)}
+            </select>
+          </div>
+          <button type="submit" class={`${btnReject} w-full`}>Merge and remove {category.label}</button>
+        </form>
+      </section>
+    )
+  }
+</Admin>

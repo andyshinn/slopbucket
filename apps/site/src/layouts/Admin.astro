@@ -7,7 +7,7 @@ import Base from "./Base.astro";
 
 interface Props {
   title: string;
-  section?: "queue" | "tools" | "reports" | "status" | "settings";
+  section?: "queue" | "tools" | "taxonomy" | "reports" | "status" | "settings";
   /** Widen to 5xl from `lg` up, for table pages. */
   wide?: boolean;
   /** From `lg` up, drop the width limit and padding so the page lays out its own columns (the queue split view). */
@@ -30,6 +30,7 @@ interface Tab {
 const tabs: Tab[] = [
   { id: "queue", href: "/admin/queue", label: "Queue", icon: "inbox", count: counts?.queue, countLabel: "waiting" },
   { id: "tools", href: "/admin/tools", label: "Tools", icon: "cube", count: counts?.tools, countLabel: "tools" },
+  { id: "taxonomy", href: "/admin/taxonomy", label: "Tags", icon: "tag" },
   { id: "reports", href: "/admin/reports", label: "Reports", icon: "flag", count: counts?.reports, countLabel: "open" },
   { id: "status", href: "/admin/status", label: "Status", icon: "chartBar" },
   { id: "settings", href: "/admin/settings", label: "Settings", icon: "cog" },

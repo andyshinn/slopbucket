@@ -1,0 +1,140 @@
+---
+import { env } from "cloudflare:workers";
+import Icon from "../../../components/Icon.astro";
+import Notice from "../../../components/Notice.astro";
+import Admin from "../../../layouts/Admin.astro";
+import { hueClasses } from "../../../lib/categories.ts";
+import { OTHER, TaxonomyError, canMove, categoryOverview, mergeCategory, otherShare, reorderCategory } from "../../../lib/taxonomy-admin.ts";
+import { accentLink, btnSecondary, card, input, num } from "../../../lib/ui.ts";
+
+let error: string | null = null;
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const action = String(form.get("action"));
+  const slug = String(form.get("slug") ?? "");
+  try {
+    if (action === "up" || action === "down") {
+      await reorderCategory(env.DB, slug, action);
+      return Astro.redirect(`/admin/taxonomy?view=categories#cat-${encodeURIComponent(slug)}`, 303);
+    }
+    if (action === "move_orphan") {
+      await mergeCategory(env.DB, slug, String(form.get("into") ?? ""));
+      return Astro.redirect("/admin/taxonomy?view=categories&done=moved", 303);
+    }
+    throw new TaxonomyError("Unknown action.");
+  } catch (err) {
+    if (!(err instanceof TaxonomyError)) throw err;
+    error = err.message;
+    Astro.response.status = 422;
+  }
+}
+
+const view = Astro.url.searchParams.get("view") === "tags" ? "tags" : "categories";
+const overview = await categoryOverview(env.DB);
+const share = otherShare(overview);
+const done = Astro.url.searchParams.get("done");
+const doneMessage: Record<string, string> = {
+  added: "Category added. New posts can use it now.",
+  merged: "Merged. Its tools and posts moved over.",
+  moved: "Moved. Those tools and posts are in a listed category now.",
+};
+const plural = (n: number, one: string, many = `${one}s`) => `${num(n)} ${n === 1 ? one : many}`;
+const segment = (active: boolean) =>
+  `flex min-h-11 items-center justify-center rounded-md px-3 text-sm font-medium focus-visible:outline-2 focus-visible:outline-lime-600 ${active ? "bg-white text-stone-900 shadow-xs ring-1 ring-stone-200" : "text-stone-600 hover:text-stone-900"}`;
+const slugs = overview.rows.map((r) => r.slug);
+---
+
+<Admin title="Tags & categories" section="taxonomy">
+  <h1 class="text-lg font-semibold">Tags &amp; categories</h1>
+  <nav class="mt-3 grid grid-cols-2 gap-1 rounded-lg bg-stone-100 p-1" aria-label="Tags or categories">
+    <a href="/admin/taxonomy?view=tags" aria-current={view === "tags" ? "page" : undefined} class={segment(view === "tags")}>Tags</a>
+    <a href="/admin/taxonomy?view=categories" aria-current={view === "categories" ? "page" : undefined} class={segment(view === "categories")}>Categories</a>
+  </nav>
+
+  {done && doneMessage[done] && <div class="mt-4"><Notice>{doneMessage[done]}</Notice></div>}
+  {error && <div class="mt-4"><Notice tone="error">{error}</Notice></div>}
+
+  {
+    view === "tags" ? (
+      <div class={`${card} mt-4 p-4 text-sm text-stone-600`}>
+        The tag vocabulary is still edited as text in <a href="/admin/settings#tags" class={accentLink}>Settings → Tags</a>, with the classifier's suggestions below it.
+      </div>
+    ) : (
+      <>
+        {share !== null && (
+          <div class="mt-4 flex gap-3 rounded-xl bg-amber-50 p-4 text-sm text-amber-900 ring-1 ring-amber-200 ring-inset">
+            <Icon name="exclamation" class="size-5 shrink-0 text-amber-600" />
+            <p>
+              Other holds {Math.round(share * 100)}% of tools. The list probably needs another category: look at what's in{" "}
+              <a href="/admin/tools?category=other" class="font-semibold underline">Other</a> for a pattern.
+            </p>
+          </div>
+        )}
+
+        <ul class={`${card} mt-4 divide-y divide-stone-100`}>
+          {overview.rows.map((c) => (
+            <li id={`cat-${c.slug}`} class="flex scroll-mt-28 items-center gap-1 py-1 pr-1 pl-4">
+              <a href={`/admin/taxonomy/categories/${c.slug}`} class="group flex min-h-11 min-w-0 flex-1 items-center gap-3 rounded-lg py-1">
+                <span class={`size-2.5 shrink-0 rounded-full ${hueClasses(c.hue).dot}`} aria-hidden="true" />
+                <span class="min-w-0 flex-1">
+                  <span class="block font-medium text-stone-900 group-hover:text-lime-700">{c.label}</span>
+                  <span class="block font-mono text-xs text-stone-500">
+                    {c.slug} · <span class="whitespace-nowrap">{plural(c.tools, "tool")}</span> · <span class="whitespace-nowrap">{num(c.queued)} queued</span>
+                  </span>
+                </span>
+                <Icon name="chevronRight" class="size-5 shrink-0 text-stone-400" />
+              </a>
+              {c.slug !== OTHER && (
+                <form method="post" class="flex shrink-0">
+                  <input type="hidden" name="slug" value={c.slug} />
+                  <button type="submit" name="action" value="up" disabled={!canMove(slugs, c.slug, "up")} class="flex size-11 items-center justify-center rounded-lg text-stone-500 hover:bg-stone-50 hover:text-stone-900 disabled:opacity-30" aria-label={`Move ${c.label} up`}>
+                    <Icon name="arrowUp" />
+                  </button>
+                  <button type="submit" name="action" value="down" disabled={!canMove(slugs, c.slug, "down")} class="flex size-11 items-center justify-center rounded-lg text-stone-500 hover:bg-stone-50 hover:text-stone-900 disabled:opacity-30" aria-label={`Move ${c.label} down`}>
+                    <Icon name="arrowDown" />
+                  </button>
+                </form>
+              )}
+            </li>
+          ))}
+        </ul>
+        <a href="/admin/taxonomy/categories/new" class={`${btnSecondary} mt-3 w-full`}>
+          <Icon name="plus" class="size-4 text-stone-500" /> Add category
+        </a>
+
+        {overview.orphans.length > 0 && (
+          <section class="mt-6">
+            <h2 class="text-lg font-semibold">Not in the list</h2>
+            <p class="mt-1 text-sm text-stone-600">Categories still stored on tools or queued posts, but removed from the list. Move them into one that's listed.</p>
+            <ul class={`${card} mt-2 divide-y divide-stone-100`}>
+              {overview.orphans.map((o) => (
+                <li class="space-y-2 p-4">
+                  <p class="text-sm">
+                    <span class="font-mono font-medium">{o.slug}</span>
+                    <span class="text-stone-500"> · {plural(o.tools, "tool")} · {num(o.queued)} queued</span>
+                  </p>
+                  <form method="post" class="grid grid-cols-[1fr_auto] gap-2">
+                    <input type="hidden" name="action" value="move_orphan" />
+                    <input type="hidden" name="slug" value={o.slug} />
+                    <select name="into" aria-label={`Move ${o.slug} into`} class={input}>
+                      {overview.rows.map((c) => <option value={c.slug} selected={c.slug === OTHER}>{c.label}</option>)}
+                    </select>
+                    <button type="submit" class={btnSecondary}>Move</button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        <div class="mt-6 space-y-2 text-sm text-stone-600">
+          <p>The order here is the order on public pages and in the classifier's list. Other always stays last and always goes to review.</p>
+          <p>
+            Renames and merges update stored tools and posts right away. A new category or a changed classifier description only
+            reaches posts when they are classified again: re-classify the queue from <a href="/admin/status#jobs-h" class={accentLink}>Status → Jobs</a> (this calls the model).
+          </p>
+        </div>
+      </>
+    )
+  }
+</Admin>

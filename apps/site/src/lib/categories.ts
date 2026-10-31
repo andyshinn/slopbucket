@@ -1,4 +1,4 @@
-import { type CategoryHue, categoryDisplay } from "@slop-bucket/core";
+import { type CategoryHue, type CategoryInfo, categoryDisplay } from "@slop-bucket/core";
 
 // Tailwind classes per category hue, written out in full so Tailwind finds them.
 // Badge: Tailwind Plus flat badge. Tile: monogram background. Dot: filter dot.
@@ -53,6 +53,21 @@ const HUE_CLASSES: Record<CategoryHue, { badge: string; tile: string; dot: strin
     tile: "bg-pink-100 text-pink-800 dark:bg-pink-500/20 dark:text-pink-200",
     dot: "bg-pink-700 dark:bg-pink-300",
   },
+  fuchsia: {
+    badge: "bg-fuchsia-50 text-fuchsia-700 ring-fuchsia-600/20 dark:bg-fuchsia-400/10 dark:text-fuchsia-300 dark:ring-fuchsia-400/20",
+    tile: "bg-fuchsia-100 text-fuchsia-800 dark:bg-fuchsia-500/20 dark:text-fuchsia-200",
+    dot: "bg-fuchsia-700 dark:bg-fuchsia-300",
+  },
+  yellow: {
+    badge: "bg-yellow-50 text-yellow-800 ring-yellow-600/20 dark:bg-yellow-400/10 dark:text-yellow-300 dark:ring-yellow-400/20",
+    tile: "bg-yellow-100 text-yellow-800 dark:bg-yellow-500/20 dark:text-yellow-200",
+    dot: "bg-yellow-700 dark:bg-yellow-300",
+  },
+  green: {
+    badge: "bg-green-50 text-green-700 ring-green-600/20 dark:bg-green-400/10 dark:text-green-300 dark:ring-green-400/20",
+    tile: "bg-green-100 text-green-800 dark:bg-green-500/20 dark:text-green-200",
+    dot: "bg-green-700 dark:bg-green-300",
+  },
   stone: {
     badge: "bg-stone-50 text-stone-700 ring-stone-600/20 dark:bg-stone-400/10 dark:text-stone-300 dark:ring-stone-400/20",
     tile: "bg-stone-100 text-stone-800 dark:bg-stone-500/20 dark:text-stone-200",
@@ -61,7 +76,10 @@ const HUE_CLASSES: Record<CategoryHue, { badge: string; tile: string; dot: strin
 };
 
 /** A category's label plus the classes for its badge, monogram tile and filter dot. */
-export function categoryStyle(slug: string) {
-  const display = categoryDisplay(slug);
+export function categoryStyle(slug: string, info: CategoryInfo) {
+  const display = categoryDisplay(slug, info);
   return { ...display, ...HUE_CLASSES[display.hue] };
 }
+
+/** The badge, tile and dot classes for one hue, for the color picker on /admin/taxonomy. */
+export const hueClasses = (hue: CategoryHue) => HUE_CLASSES[hue];

@@ -15,7 +15,8 @@ interface Props {
   query?: string;
 }
 const { title, description, nav, query = "" } = Astro.props;
-const categories = (await getSetting(env.DB, "categories")).map(categoryStyle);
+const [categorySlugs, categoryInfo] = await Promise.all([getSetting(env.DB, "categories"), Astro.locals.categoryInfo()]);
+const categories = categorySlugs.map((slug) => categoryStyle(slug, categoryInfo));
 
 const focusRing = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime-600 dark:focus-visible:outline-lime-400";
 const navItem = (active: boolean) =>

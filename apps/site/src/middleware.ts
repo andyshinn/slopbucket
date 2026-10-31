@@ -1,10 +1,15 @@
 import { defineMiddleware } from "astro:middleware";
 import { env } from "cloudflare:workers";
+import { type CategoryInfo, getSetting } from "@slop-bucket/core";
 import { guardAdmin, isAdminPath } from "./lib/access.ts";
 import { cacheableCopy, edgeCache, isCacheablePath, pageCacheKey } from "./lib/edge-cache.ts";
 import { tooManyRequests, withinLimit } from "./lib/rate-limit.ts";
 
 export const onRequest = defineMiddleware(async (context, next) => {
+  // Category labels and colors, for any badge or tile on the page; only read if one renders.
+  let categoryInfo: Promise<CategoryInfo> | undefined;
+  context.locals.categoryInfo = () => (categoryInfo ??= getSetting(env.DB, "category_info"));
+
   if (!isAdminPath(context.url.pathname)) {
     const cache = isCacheablePath(context.request.method, context.url.pathname) ? edgeCache() : null;
     if (!cache) return next();

@@ -23,6 +23,7 @@ const { idPrefix, action, filters: f, defaultSort, facets, groups, categories, h
 
 // Keep the query and a non-default sort across filter changes.
 const kept = [...filterParams({ ...f, page: 1 }, defaultSort)].filter(([k]) => k === "q" || k === "sort");
+const categoryInfo = await Astro.locals.categoryInfo();
 const SHOWN_TAGS = 6;
 const row = `flex items-center gap-3 rounded-lg px-2 text-sm hover:bg-stone-100 dark:hover:bg-stone-800 ${large ? "min-h-11" : "min-h-9"}`;
 const box = `shrink-0 rounded border-stone-300 accent-lime-600 dark:border-stone-700 ${large ? "size-5" : "size-4"}`;
@@ -68,7 +69,7 @@ for (const l of f.langs) if (!langs.some(([k]) => k === l)) langs.push([l, 0]);
         <legend class={legend}>Category</legend>
         <div class="mt-2">
           {categories.map((slug) => {
-            const c = categoryStyle(slug);
+            const c = categoryStyle(slug, categoryInfo);
             const n = facets.categories.get(slug) ?? 0;
             const checked = f.categories.includes(slug);
             return (

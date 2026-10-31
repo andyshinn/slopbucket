@@ -11,7 +11,7 @@ const page = await loadBrowsePage(env.DB, Astro.url, base, "trending", name);
 // Checked before any list query runs; not cached, since the edge cache keeps 200s only.
 if (page.notFound) return new Response("Not found", { status: 404 });
 if (page.redirect) return Astro.redirect(page.redirect, 302);
-const c = categoryStyle(name);
+const c = categoryStyle(name, await Astro.locals.categoryInfo());
 ---
 
 <Public title={`${c.label} · Slop Bucket`} description={c.blurb || `${c.label} tools in the bucket.`} nav="categories">

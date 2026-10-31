@@ -15,10 +15,11 @@ const category = params.get("category") ?? "";
 const sort = params.get("sort") ?? "trending";
 const page = Math.max(1, Number(params.get("page")) || 1);
 
-const [{ tools, total }, counts, categories] = await Promise.all([
+const [{ tools, total }, counts, categories, categoryInfo] = await Promise.all([
   listTools(env.DB, { q, status, category, sort, page }),
   toolStatusCounts(env.DB),
   getSetting(env.DB, "categories"),
+  Astro.locals.categoryInfo(),
 ]);
 const all = Object.values(counts).reduce((a, b) => a + b, 0);
 const tabs = [
@@ -40,7 +41,7 @@ function link(changes: Record<string, string | number>): string {
   return `/admin/tools${s ? `?${s}` : ""}`;
 }
 const statusText = (t: ToolRow) => (t.merged_into ? "Merged" : t.status.charAt(0).toUpperCase() + t.status.slice(1));
-const categoryLabel = (slug: string | null) => (slug ? categoryDisplay(slug).label : "No category");
+const categoryLabel = (slug: string | null) => (slug ? categoryDisplay(slug, categoryInfo).label : "No category");
 const sourceText = (v: number | null) => (v === 1 ? "Open" : v === 0 ? "Closed" : "Unknown");
 const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 ---
@@ -76,7 +77,7 @@ const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
       <label for="category" class={label}>Category</label>
       <select id="category" name="category" class={`${input} mt-1`}>
         <option value="">All</option>
-        {categories.map((c) => <option value={c} selected={c === category}>{categoryDisplay(c).label}</option>)}
+        {categories.map((c) => <option value={c} selected={c === category}>{categoryDisplay(c, categoryInfo).label}</option>)}
       </select>
     </div>
     <div>
