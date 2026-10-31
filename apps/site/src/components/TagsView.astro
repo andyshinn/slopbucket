@@ -1,0 +1,120 @@
+---
+import type { TagOverview } from "../lib/tags-admin.ts";
+import { accentLink, btnSecondary, card, input, num } from "../lib/ui.ts";
+import Icon from "./Icon.astro";
+
+interface Props {
+  overview: TagOverview;
+}
+const { overview } = Astro.props;
+const plural = (n: number, one: string, many = `${one}s`) => `${num(n)} ${n === 1 ? one : many}`;
+// Tags outside the vocabulary, each with Map to and a way to drop it: suggestions also get Add.
+const outside = [
+  {
+    id: "suggested",
+    title: "Suggested by the model",
+    intro: "Tags the classifier wanted but couldn't use, with how many queued or published posts asked. Add one to your list, or map it to a tag you have: either way those posts and their tools get the tag now.",
+    rows: overview.suggestions.map((s) => ({ tag: s.tag, count: plural(s.posts, "post"), add: true })),
+    drop: "Dismiss",
+  },
+  {
+    id: "orphans",
+    title: "Not in the list",
+    intro: "Tags still on tools but missing from your list (left from an older vocabulary). Map each to a tag you have, or remove it.",
+    rows: overview.orphans.map((o) => ({ tag: o.tag, count: plural(o.tools, "tool"), add: false })),
+    drop: "Remove",
+  },
+];
+---
+
+<div class="mt-4 space-y-4">
+  {
+    overview.groups.map((g) => (
+      <section id={`group-${g.slug}`} class={`${card} scroll-mt-28`} aria-labelledby={`group-${g.slug}-h`}>
+        <a href={`/admin/taxonomy/groups/${encodeURIComponent(g.slug)}`} class="group flex min-h-11 items-center gap-3 border-b border-stone-100 px-4 py-2">
+          <span class="min-w-0 flex-1">
+            <span id={`group-${g.slug}-h`} class="block font-mono text-xs font-semibold tracking-wide text-stone-500 uppercase group-hover:text-lime-700">{g.label}</span>
+            {g.hint && <span class="block text-xs text-stone-500">{g.hint}</span>}
+          </span>
+          <Icon name="pencil" class="size-4 shrink-0 text-stone-400" />
+          <span class="sr-only">Edit group</span>
+        </a>
+        <ul class="divide-y divide-stone-100">
+          {g.tags.map((t) => (
+            <li id={`tag-${t.slug}`} class="scroll-mt-28">
+              <a href={`/admin/taxonomy/tags/${encodeURIComponent(t.slug)}`} class="group flex min-h-11 items-center gap-3 px-4 py-1.5">
+                <span class="min-w-0 flex-1">
+                  <span class="font-medium text-stone-900 group-hover:text-lime-700">{t.label}</span>{" "}
+                  <span class="font-mono text-xs text-stone-500">#{t.slug}</span>
+                </span>
+                <span class="font-mono text-xs whitespace-nowrap text-stone-500">{plural(t.tools, "tool")}</span>
+                <Icon name="chevronRight" class="size-5 shrink-0 text-stone-400" />
+              </a>
+            </li>
+          ))}
+          <li>
+            <a href={`/admin/taxonomy/tags/new?group=${encodeURIComponent(g.slug)}`} class="flex min-h-11 items-center gap-2 px-4 text-sm font-medium text-lime-700">
+              <Icon name="plus" class="size-4" /> Add to {g.label}
+            </a>
+          </li>
+        </ul>
+      </section>
+    ))
+  }
+  <a href="/admin/taxonomy/groups/new" class={`${btnSecondary} w-full`}>
+    <Icon name="plus" class="size-4 text-stone-500" /> Add group
+  </a>
+</div>
+
+{
+  outside.map(
+    (section) =>
+      section.rows.length > 0 && (
+        <section id={section.id} class="mt-6 scroll-mt-28">
+          <h2 class="text-lg font-semibold">{section.title}</h2>
+          <p class="mt-1 text-sm text-stone-600">{section.intro}</p>
+          <ul class={`${card} mt-2 divide-y divide-stone-100`}>
+            {section.rows.map((r) => (
+              <li class="space-y-2 p-4">
+                <div class="flex items-center gap-3">
+                  <p class="min-w-0 flex-1 text-sm">
+                    <span class="font-mono font-medium break-all">{r.tag}</span>
+                    <span class="text-stone-500"> · {r.count}</span>
+                  </p>
+                  {r.add && (
+                    <a href={`/admin/taxonomy/tags/new?suggestion=${encodeURIComponent(r.tag)}`} class={`${btnSecondary} shrink-0`}>
+                      <Icon name="plus" class="size-4 text-stone-500" /> Add
+                    </a>
+                  )}
+                </div>
+                <form method="post" class="grid grid-cols-[1fr_auto_auto] gap-2">
+                  <input type="hidden" name="tag" value={r.tag} />
+                  <select name="into" required aria-label={`Map ${r.tag} to`} class={input}>
+                    <option value="">Map to…</option>
+                    {overview.groups.map((g) => (
+                      <optgroup label={g.label}>
+                        {g.tags.map((t) => <option value={t.slug}>{t.label}</option>)}
+                      </optgroup>
+                    ))}
+                  </select>
+                  <button type="submit" name="action" value="map_tag" class={btnSecondary}>Map</button>
+                  <button type="submit" name="action" value="drop_tag" formnovalidate class={btnSecondary} aria-label={`${section.drop} ${r.tag}`}>
+                    {section.drop}
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ),
+  )
+}
+
+<div class="mt-6 space-y-2 text-sm text-stone-600">
+  <p>Language tags (python, rust…) aren't needed: the Language filter reads GitHub's repo language. Dismiss them.</p>
+  <p>The order here is the order in the public filters and in the classifier's list. Move a tag or group from its edit page.</p>
+  <p>
+    Renames, merges, deletes and mapped suggestions update stored tools and posts right away. A new tag only reaches other posts when they are classified again:
+    re-classify the queue from <a href="/admin/status#jobs-h" class={accentLink}>Status → Jobs</a> (this calls the model).
+  </p>
+</div>

@@ -1,0 +1,26 @@
+---
+import Icon from "./Icon.astro";
+import { card, label as labelClass } from "../lib/ui.ts";
+
+// "Move up / Move down" for an edit page: posts action=up or action=down to the page itself.
+interface Props {
+  /** Heading over the buttons, e.g. "Position in Platform". */
+  label: string;
+  disabledUp: boolean;
+  disabledDown: boolean;
+}
+const { label, disabledUp, disabledDown } = Astro.props;
+const button = "flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg text-sm font-medium text-stone-700 ring-1 ring-stone-300 ring-inset hover:bg-stone-50 disabled:opacity-40";
+---
+
+<form method="post" class={`${card} mt-4 p-4`}>
+  <p class={labelClass}>{label}</p>
+  <div class="mt-2 flex gap-2">
+    <button type="submit" name="action" value="up" disabled={disabledUp} class={button}>
+      <Icon name="arrowUp" class="size-4" /> Move up
+    </button>
+    <button type="submit" name="action" value="down" disabled={disabledDown} class={button}>
+      <Icon name="arrowDown" class="size-4" /> Move down
+    </button>
+  </div>
+</form>

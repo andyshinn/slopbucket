@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { getSetting, publishConfidentPreview } from "@slop-bucket/core";
 import { describe, expect, it } from "vitest";
-import { SETTING_FIELDS, SettingError, TAXONOMY_KEYS, formatTagGroups, loadSettings, saveSetting, queuedScores, suggestedTags, thresholdHistogram } from "../src/lib/settings-admin.ts";
+import { SETTING_FIELDS, SettingError, TAXONOMY_KEYS, loadSettings, saveSetting, queuedScores, thresholdHistogram } from "../src/lib/settings-admin.ts";
 
 const db = env.DB;
 const form = (entries: Record<string, string>) => {
@@ -37,6 +37,7 @@ describe("saveSetting", () => {
     ["max_fewshot", { value: "2.5" }],
     ["github_min_stars", { value: "-1" }],
     ["categories", { value: "agent\nother" }], // edited on the taxonomy page
+    ["tags", { value: "# Works with\nclaude-code: Claude Code" }], // likewise
     ["model_id", { value: "" }],
     ["model_reasoning_effort", { value: "extreme" }],
     ["trending_weights", { w_s: "1", w_e: "1", w_g: "", g: "1" }],
@@ -45,47 +46,6 @@ describe("saveSetting", () => {
     const before = await loadSettings(db);
     await expect(saveSetting(db, key, form(entries))).rejects.toBeInstanceOf(SettingError);
     expect(await loadSettings(db)).toEqual(before);
-  });
-});
-
-describe("tags setting", () => {
-  it("round-trips the seeded vocabulary through the text format", async () => {
-    const seeded = await getSetting(db, "tags");
-    expect(seeded.map((g) => g.slug)).toEqual(["works-with", "models", "platform", "interface"]);
-    const text = formatTagGroups(seeded);
-    expect(text).toContain("# Works with | the coding agent or editor it plugs into or drives\nclaude-code: Claude Code");
-    await saveSetting(db, "tags", form({ value: text }));
-    expect(await getSetting(db, "tags")).toEqual(seeded);
-  });
-
-  it("parses groups and tags, and rejects duplicates and bad slugs with a pointer", async () => {
-    const original = await getSetting(db, "tags");
-    try {
-      await saveSetting(db, "tags", form({ value: "# Works with | host agent\nclaude-code: Claude Code\nkiro\n\n# Platform\nmacos: macOS" }));
-      expect(await getSetting(db, "tags")).toEqual([
-        { slug: "works-with", label: "Works with", hint: "host agent", tags: [{ slug: "claude-code", label: "Claude Code" }, { slug: "kiro", label: "kiro" }] },
-        { slug: "platform", label: "Platform", hint: "", tags: [{ slug: "macos", label: "macOS" }] },
-      ]);
-      await expect(saveSetting(db, "tags", form({ value: "# A\nx\n# B\nx" }))).rejects.toThrow("only once");
-      await expect(saveSetting(db, "tags", form({ value: "# Works with\nClaude Code" }))).rejects.toThrow('Works with, "Claude Code"');
-      await expect(saveSetting(db, "tags", form({ value: "orphan: Orphan" }))).rejects.toThrow(SettingError);
-    } finally {
-      await db.prepare("UPDATE settings SET value = ? WHERE key = 'tags'").bind(JSON.stringify(original)).run();
-    }
-  });
-
-  it("lists tags the classifier suggested", async () => {
-    await db.prepare("DELETE FROM posts").run();
-    await db
-      .prepare(
-        `INSERT INTO posts (source, external_id, url, canonical_url, title, posted_at, status, classification) VALUES
-         ('hn', 's1', 'u', 'u', 't', '2026-10-01T00:00:00Z', 'queued', '{"suggested_tags":["kiro","amp"]}'),
-         ('hn', 's2', 'u', 'u', 't', '2026-10-01T00:00:00Z', 'queued', '{"suggested_tags":["kiro"]}'),
-         ('hn', 's3', 'u', 'u', 't', '2026-10-01T00:00:00Z', 'dropped', '{"suggested_tags":["ignored"]}')`,
-      )
-      .run();
-    expect(await suggestedTags(db)).toEqual([{ tag: "kiro", n: 2 }, { tag: "amp", n: 1 }]);
-    await db.prepare("DELETE FROM posts").run();
   });
 });
 

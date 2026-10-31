@@ -1,0 +1,53 @@
+---
+import { env } from "cloudflare:workers";
+import Notice from "../../../../components/Notice.astro";
+import Admin from "../../../../layouts/Admin.astro";
+import { addGroup, groupFieldsFromForm } from "../../../../lib/tags-admin.ts";
+import { TaxonomyError } from "../../../../lib/taxonomy-admin.ts";
+import { btnPrimary, card, input, label } from "../../../../lib/ui.ts";
+
+let error: string | null = null;
+let values = groupFieldsFromForm(null);
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  values = groupFieldsFromForm(form);
+  try {
+    const slug = await addGroup(env.DB, form);
+    return Astro.redirect(`/admin/taxonomy?done=group_added#group-${slug}`, 303);
+  } catch (err) {
+    if (!(err instanceof TaxonomyError)) throw err;
+    error = err.message;
+    Astro.response.status = 422;
+  }
+}
+---
+
+<Admin title="Add tag group" section="taxonomy">
+  <a href="/admin/taxonomy" class="text-sm font-medium text-brand-700">← Tags</a>
+  <h1 class="mt-2 text-lg font-semibold">Add tag group</h1>
+  <p class="mt-1 text-sm text-stone-600">It goes last, as its own filter section. A group needs at least one tag, so give it its first one here.</p>
+  <form method="post" class={`${card} mt-4 space-y-4 p-4`}>
+    {error && <Notice tone="error">{error}</Notice>}
+    <div>
+      <label for="label" class={label}>Name</label>
+      <input id="label" name="label" value={values.label} required class={`${input} mt-1`} autocomplete="off" />
+    </div>
+    <div>
+      <label for="hint" class={label}>What it means</label>
+      <input id="hint" name="hint" value={values.hint} aria-describedby="hint-help" class={`${input} mt-1`} autocomplete="off" />
+      <p id="hint-help" class="mt-1 text-xs text-stone-500">For the classifier, e.g. "where it runs".</p>
+    </div>
+    <fieldset class="space-y-4 border-t border-stone-100 pt-4">
+      <legend class="sr-only">First tag</legend>
+      <div>
+        <label for="tag_label" class={label}>First tag</label>
+        <input id="tag_label" name="tag_label" value={values.tag_label} required class={`${input} mt-1`} autocomplete="off" />
+      </div>
+      <div>
+        <label for="tag_slug" class={label}>Its slug <span class="font-normal text-stone-500">(blank: made from the label)</span></label>
+        <input id="tag_slug" name="tag_slug" value={values.tag_slug} class={`${input} mt-1 font-mono text-sm`} autocomplete="off" autocapitalize="off" />
+      </div>
+    </fieldset>
+    <button type="submit" class={`${btnPrimary} w-full`}>Add group</button>
+  </form>
+</Admin>

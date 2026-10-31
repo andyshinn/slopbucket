@@ -1,0 +1,68 @@
+---
+import { env } from "cloudflare:workers";
+import MoveButtons from "../../../../components/MoveButtons.astro";
+import Notice from "../../../../components/Notice.astro";
+import Admin from "../../../../layouts/Admin.astro";
+import { groupFieldsFromForm, loadTagSettings, reorderGroup, updateGroup } from "../../../../lib/tags-admin.ts";
+import { TaxonomyError, canMoveIn } from "../../../../lib/taxonomy-admin.ts";
+import { btnPrimary, card, input, label } from "../../../../lib/ui.ts";
+
+const slug = Astro.params.slug ?? "";
+let error: string | null = null;
+let submitted: FormData | null = null;
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const action = String(form.get("action"));
+  try {
+    if (action === "save") {
+      submitted = form;
+      await updateGroup(env.DB, slug, form);
+      return Astro.redirect(`/admin/taxonomy/groups/${encodeURIComponent(slug)}?done=save`, 303);
+    }
+    if (action === "up" || action === "down") {
+      await reorderGroup(env.DB, slug, action);
+      return Astro.redirect(`/admin/taxonomy/groups/${encodeURIComponent(slug)}?done=moved`, 303);
+    }
+    throw new TaxonomyError("Unknown action.");
+  } catch (err) {
+    if (!(err instanceof TaxonomyError)) throw err;
+    error = err.message;
+    Astro.response.status = 422;
+  }
+}
+
+const { groups } = await loadTagSettings(env.DB);
+const group = groups.find((g) => g.slug === slug);
+if (!group) return Astro.redirect(error ? "/admin/taxonomy?error=gone" : "/admin/taxonomy", 303);
+const values = submitted ? groupFieldsFromForm(submitted) : { label: group.label, hint: group.hint };
+const done = Astro.url.searchParams.get("done");
+const doneMessage: Record<string, string> = { save: "Saved.", moved: "Moved." };
+const slugs = groups.map((g) => g.slug);
+---
+
+<Admin title={`Edit ${group.label}`} section="taxonomy">
+  <a href={`/admin/taxonomy#group-${encodeURIComponent(slug)}`} class="text-sm font-medium text-brand-700">← Tags</a>
+  <h1 class="mt-2 text-lg font-semibold">{group.label}</h1>
+  <p class="mt-1 text-sm text-stone-600">{group.tags.map((t) => t.label).join(", ")}</p>
+
+  {done && doneMessage[done] && <div class="mt-4"><Notice>{doneMessage[done]}</Notice></div>}
+
+  <form method="post" class={`${card} mt-4 space-y-4 p-4`}>
+    <input type="hidden" name="action" value="save" />
+    {error && <Notice tone="error">{error}</Notice>}
+    <div>
+      <label for="label" class={label}>Name</label>
+      <input id="label" name="label" value={values.label} required class={`${input} mt-1`} autocomplete="off" />
+    </div>
+    <div>
+      <label for="hint" class={label}>What it means</label>
+      <input id="hint" name="hint" value={values.hint} aria-describedby="hint-help" class={`${input} mt-1`} autocomplete="off" />
+      <p id="hint-help" class="mt-1 text-xs text-stone-500">For the classifier, e.g. "where it runs". A change reaches posts when they are classified again.</p>
+    </div>
+    <button type="submit" class={`${btnPrimary} w-full`}>Save changes</button>
+  </form>
+
+  <MoveButtons label="Position among groups" disabledUp={!canMoveIn(slugs, slug, "up")} disabledDown={!canMoveIn(slugs, slug, "down")} />
+
+  <p class="mt-6 text-sm text-stone-600">A group goes away when its last tag is moved out, merged or deleted.</p>
+</Admin>

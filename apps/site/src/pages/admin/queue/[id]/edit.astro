@@ -118,7 +118,7 @@ const suggested = Array.isArray(v.suggested_tags) ? v.suggested_tags.map(String)
           </div>
         </div>
       ))}
-      {suggested.length > 0 && <p class="mt-2 text-xs text-stone-500">The model also suggested: {suggested.join(", ")} (add them under Settings → Tags to use them).</p>}
+      {suggested.length > 0 && <p class="mt-2 text-xs text-stone-500">The model also suggested: {suggested.join(", ")} (add them under Tags &amp; categories to use them).</p>}
     </fieldset>
     <div>
       <label for="description" class={label}>Description <span class="font-normal text-stone-500">(under 140 characters)</span></label>

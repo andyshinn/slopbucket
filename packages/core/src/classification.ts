@@ -42,7 +42,7 @@ export function classificationSchema(categories: readonly string[], tagVocabular
     version: nullableString,
     category: z.string().refine((v) => categories.includes(v), { message: "category not in settings" }),
     tags: z.array(z.string().trim().toLowerCase().min(1)).max(10),
-    // Tags the model thinks are missing from the vocabulary; reviewed on the settings page.
+    // Tags the model thinks are missing from the vocabulary; reviewed on Admin → Tags & categories.
     suggested_tags: z.array(z.string().trim().toLowerCase().min(1)).max(10).optional(),
     is_open_source: z.boolean(),
     description: z.string().transform((v) => v.trim().slice(0, 140)),

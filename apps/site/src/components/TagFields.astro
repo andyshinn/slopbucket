@@ -1,0 +1,29 @@
+---
+import type { TagGroups } from "@slop-bucket/core";
+import type { TagFieldValues } from "../lib/tags-admin.ts";
+import { input, label } from "../lib/ui.ts";
+
+interface Props {
+  values: TagFieldValues;
+  groups: TagGroups;
+  /** Shown under the slug when editing: what a rename does. */
+  slugHelp?: string;
+}
+const { values, groups, slugHelp = "Leave it blank to make one from the label." } = Astro.props;
+---
+
+<div>
+  <label for="label" class={label}>Label</label>
+  <input id="label" name="label" value={values.label} required class={`${input} mt-1`} autocomplete="off" />
+</div>
+<div>
+  <label for="slug" class={label}>Slug <span class="font-normal text-stone-500">(filter links: ?tag=slug)</span></label>
+  <input id="slug" name="slug" value={values.slug} aria-describedby="slug-help" class={`${input} mt-1 font-mono text-sm`} autocomplete="off" autocapitalize="off" />
+  <p id="slug-help" class="mt-1 text-xs text-stone-500">{slugHelp}</p>
+</div>
+<div>
+  <label for="group" class={label}>Group</label>
+  <select id="group" name="group" class={`${input} mt-1`}>
+    {groups.map((g) => <option value={g.slug} selected={values.group === g.slug}>{g.label}</option>)}
+  </select>
+</div>
