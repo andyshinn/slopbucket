@@ -89,6 +89,7 @@ describe("addCategory", () => {
     await expect(addCategory(db, fields({ slug: "agent" }))).rejects.toThrow("already a category");
     await expect(addCategory(db, fields({ label: " " }))).rejects.toThrow(TaxonomyError);
     await expect(addCategory(db, fields({ hue: "lime" }))).rejects.toThrow("color");
+    await expect(addCategory(db, fields({ slug: "new" }))).rejects.toThrow("reserved");
     expect(await db.prepare("SELECT value FROM settings WHERE key = 'categories'").first<{ value: string }>()).toEqual({ value: original.categories });
   });
 });

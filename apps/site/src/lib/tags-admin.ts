@@ -1,5 +1,5 @@
 import { type TagGroups, parseSetting, settingSchemas, tagSlugs } from "@slop-bucket/core";
-import { TaxonomyError, slugify } from "./taxonomy-admin.ts";
+import { TaxonomyError, assertNotReserved, canMoveIn, moveIn, slugify } from "./taxonomy-admin.ts";
 
 // Tags on /admin/taxonomy. The `tags` setting is the vocabulary: groups of tags, in display
 // order, that the classifier may choose from. Renames, merges, deletes and mapped suggestions
@@ -76,17 +76,17 @@ export async function loadTagSettings(db: D1Database): Promise<TagSettings> {
 const UNCHANGED = "(SELECT value FROM settings WHERE key = 'tags') = ?3";
 
 // A JSON array from json_each(source) with tag ?1 swapped for ?2 (dropped when ?2 is NULL),
-// in the original order and without duplicates.
+// in the original order and without duplicates. ?1 is lowercase and matches any case.
 const swapped = (source: string) =>
   `json((SELECT json_group_array(v) FROM (
-     SELECT CASE WHEN value = ?1 THEN ?2 ELSE value END AS v, min(key) AS k FROM json_each(${source})
-     WHERE value != ?1 OR ?2 IS NOT NULL GROUP BY v ORDER BY k)))`;
+     SELECT CASE WHEN lower(value) = ?1 THEN ?2 ELSE value END AS v, min(key) AS k FROM json_each(${source})
+     WHERE lower(value) != ?1 OR ?2 IS NOT NULL GROUP BY v ORDER BY k)))`;
 // A JSON array from json_each(source) with ?2 added at the end, once (unchanged when ?2 is NULL).
 const appended = (source: string) =>
   `json((SELECT json_group_array(v) FROM (
      SELECT value AS v, key AS k FROM json_each(${source}) WHERE ?2 IS NULL OR value != ?2
      UNION ALL SELECT ?2, 1e9 WHERE ?2 IS NOT NULL ORDER BY k)))`;
-const has = (source: string, param: "?1" | "?2") => `EXISTS (SELECT 1 FROM json_each(${source}) WHERE value = ${param})`;
+const has = (source: string, param: "?1" | "?2") => `EXISTS (SELECT 1 FROM json_each(${source}) WHERE ${param === "?1" ? "lower(value)" : "value"} = ${param})`;
 
 /**
  * Statements that move stored tag `from` to `into`, or remove it when `into` is null:
@@ -110,7 +110,7 @@ function retag(db: D1Database, guard: string, from: string, into: string | null)
      WHERE EXISTS (SELECT 1 FROM json_each(posts.classification, '$.suggested_tags') WHERE lower(value) = ?1)`,
     `UPDATE review_decisions SET corrected_fields = json_set(corrected_fields, '$.tags', ${swapped("review_decisions.corrected_fields, '$.tags'")})
      WHERE ${has("review_decisions.corrected_fields, '$.tags'", "?1")}`,
-  ].map((sql) => db.prepare(`${sql} AND ${UNCHANGED}`).bind(from, into, guard));
+  ].map((sql) => db.prepare(`${sql} AND ${UNCHANGED}`).bind(from.toLowerCase(), into, guard));
 }
 
 /**
@@ -146,6 +146,7 @@ function readTagFields(form: FormData, groups: TagGroups): { label: string; slug
   const group = groups.find((g) => g.slug === raw.group);
   if (!label) throw new TaxonomyError("Give it a label.");
   if (!slug) throw new TaxonomyError("Give it a slug: lowercase letters, digits and hyphens.");
+  assertNotReserved(slug);
   if (!group) throw new TaxonomyError("Pick a group.");
   return { label, slug, group };
 }
@@ -203,25 +204,13 @@ export async function updateTag(db: D1Database, slug: string, form: FormData): P
   return newSlug;
 }
 
-/** Whether a tag or group can move one place up or down its list. */
-export function canMoveIn(list: readonly { slug: string }[], slug: string, direction: "up" | "down"): boolean {
-  const at = list.findIndex((x) => x.slug === slug);
-  const to = direction === "up" ? at - 1 : at + 1;
-  return at !== -1 && to >= 0 && to < list.length;
-}
-
-function swap<T extends { slug: string }>(list: T[], slug: string, direction: "up" | "down") {
-  const at = list.findIndex((x) => x.slug === slug);
-  const to = direction === "up" ? at - 1 : at + 1;
-  [list[at], list[to]] = [list[to]!, list[at]!];
-}
-
 /** Moves a tag one place up or down within its group: the order in filters and in the prompt. */
 export async function reorderTag(db: D1Database, slug: string, direction: "up" | "down"): Promise<void> {
   const read = await loadTagSettings(db);
   const { group } = locate(read.groups, slug);
-  if (!canMoveIn(group.tags, slug, direction)) return;
-  swap(group.tags, slug, direction);
+  const slugs = group.tags.map((t) => t.slug);
+  if (!canMoveIn(slugs, slug, direction)) return;
+  moveIn(group.tags, slugs, slug, direction);
   await saveTagSettings(db, read, read.groups);
 }
 
@@ -244,7 +233,8 @@ export async function deleteTag(db: D1Database, slug: string): Promise<void> {
  * and tools that have it `into` instead, or just drops it when `into` is null. The
  * vocabulary stays as it is.
  */
-export async function mapTag(db: D1Database, from: string, into: string | null): Promise<void> {
+export async function mapTag(db: D1Database, tag: string, into: string | null): Promise<void> {
+  const from = tag.trim().toLowerCase();
   const read = await loadTagSettings(db);
   const vocabulary = tagSlugs(read.groups);
   if (!from) throw new TaxonomyError("Pick a tag to map.");
@@ -269,8 +259,10 @@ export async function addGroup(db: D1Database, form: FormData): Promise<string> 
   const slug = slugify(label);
   const tag = { label: clean(f.tag_label), slug: slugify(f.tag_slug || f.tag_label) };
   if (!slug) throw new TaxonomyError("Give the group a name.");
+  assertNotReserved(slug);
   if (read.groups.some((g) => g.slug === slug)) throw new TaxonomyError(`There is already a "${label}" group.`);
   if (!tag.label || !tag.slug) throw new TaxonomyError("Give it a first tag: a group can't be empty.");
+  assertNotReserved(tag.slug);
   if (tagSlugs(read.groups).includes(tag.slug)) throw new TaxonomyError(`"${tag.slug}" is already a tag.`);
   read.groups.push({ slug, label, hint: clean(f.hint), tags: [tag] });
   await saveTagSettings(db, read, read.groups, [{ from: tag.slug, into: tag.slug }]);
@@ -292,7 +284,9 @@ export async function updateGroup(db: D1Database, slug: string, form: FormData):
 /** Moves a group one place up or down: the order in filters and in the prompt. */
 export async function reorderGroup(db: D1Database, slug: string, direction: "up" | "down"): Promise<void> {
   const read = await loadTagSettings(db);
-  if (!canMoveIn(read.groups, slug, direction)) return;
-  swap(read.groups, slug, direction);
+  const slugs = read.groups.map((g) => g.slug);
+  if (!slugs.includes(slug)) throw new TaxonomyError(`"${slug}" is not a group.`);
+  if (!canMoveIn(slugs, slug, direction)) return;
+  moveIn(read.groups, slugs, slug, direction);
   await saveTagSettings(db, read, read.groups);
 }

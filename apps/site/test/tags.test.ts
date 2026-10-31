@@ -1,10 +1,10 @@
 import { env } from "cloudflare:workers";
 import { getSetting } from "@slop-bucket/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { canMoveIn } from "../src/lib/taxonomy-admin.ts";
 import {
   addGroup,
   addTag,
-  canMoveIn,
   deleteTag,
   loadTagSettings,
   mapTag,
@@ -88,6 +88,9 @@ describe("addTag", () => {
     await expect(addTag(db, form({ label: "CLI", slug: "cli", group: "interface" }))).rejects.toThrow("already a tag");
     await expect(addTag(db, form({ label: " ", slug: "x", group: "interface" }))).rejects.toThrow("label");
     await expect(addTag(db, form({ label: "X", slug: "x", group: "nope" }))).rejects.toThrow("group");
+    // tags/new.astro would shadow its edit page.
+    await expect(addTag(db, form({ label: "New", slug: "", group: "interface" }))).rejects.toThrow("reserved");
+    await expect(updateTag(db, "cli", form({ label: "CLI", slug: "new", group: "interface" }))).rejects.toThrow("reserved");
     expect((await loadTagSettings(db)).stored).toBe(original);
   });
 });
@@ -169,10 +172,15 @@ describe("mapTag", () => {
     expect((await loadTagSettings(db)).stored).toBe(original);
   });
 
-  it("maps a tag left on tools", async () => {
+  it("maps a tag left on tools, in any case", async () => {
     const t = await tool(["retired", "cli"]);
+    const mixed = await tool(["Old-Tag"]);
+    const p = await post({ tags: ["Old-Tag"], suggested_tags: ["old-tag"] }, { toolId: mixed });
     await mapTag(db, "retired", "cli");
     expect(await toolTags(t)).toEqual(["cli"]);
+    await mapTag(db, "Old-Tag", "macos");
+    expect(await toolTags(mixed)).toEqual(["macos"]);
+    expect(await classification(p)).toMatchObject({ tags: ["macos"], suggested_tags: [] });
   });
 
   it("refuses a vocabulary tag or an unknown target", async () => {
@@ -183,9 +191,10 @@ describe("mapTag", () => {
 
 describe("ordering", () => {
   it("moves tags within their group and groups among themselves", async () => {
-    expect(canMoveIn([{ slug: "a" }, { slug: "b" }], "a", "up")).toBe(false);
-    expect(canMoveIn([{ slug: "a" }, { slug: "b" }], "a", "down")).toBe(true);
-    expect(canMoveIn([{ slug: "a" }, { slug: "b" }], "nope", "down")).toBe(false);
+    expect(canMoveIn(["a", "b"], "a", "up")).toBe(false);
+    expect(canMoveIn(["a", "b"], "a", "down")).toBe(true);
+    expect(canMoveIn(["a", "b"], "nope", "down")).toBe(false);
+    await expect(reorderGroup(db, "nope", "up")).rejects.toThrow("not a group");
     const first = (await getSetting(db, "tags"))[0]!;
     await reorderTag(db, first.tags[1]!.slug, "up");
     expect((await getSetting(db, "tags"))[0]!.tags.slice(0, 2).map((t) => t.slug)).toEqual([first.tags[1]!.slug, first.tags[0]!.slug]);
@@ -208,6 +217,8 @@ describe("groups", () => {
     await expect(addGroup(db, form({ label: "Editors", hint: "", tag_label: "", tag_slug: "" }))).rejects.toThrow("first tag");
     await expect(addGroup(db, form({ label: "Models", hint: "", tag_label: "X", tag_slug: "" }))).rejects.toThrow("already");
     await expect(addGroup(db, form({ label: "Editors", hint: "", tag_label: "CLI", tag_slug: "cli" }))).rejects.toThrow("already a tag");
+    await expect(addGroup(db, form({ label: "New", hint: "", tag_label: "X", tag_slug: "" }))).rejects.toThrow("reserved");
+    await expect(addGroup(db, form({ label: "Editors", hint: "", tag_label: "New", tag_slug: "" }))).rejects.toThrow("reserved");
   });
 });
 

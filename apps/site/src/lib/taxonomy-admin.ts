@@ -56,6 +56,14 @@ export function otherShare(overview: CategoryOverview): number | null {
 
 export const slugify = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
+/** Slugs the admin's own routes use (`.../new`), so a category, tag or group can't take them. */
+const RESERVED_SLUGS = ["new"];
+
+/** Refuses a slug that a static admin route would shadow, leaving that page unreachable. */
+export function assertNotReserved(slug: string): void {
+  if (RESERVED_SLUGS.includes(slug)) throw new TaxonomyError(`"${slug}" is reserved. Pick another slug.`);
+}
+
 /** The fields of the add and edit forms. */
 export const CATEGORY_FIELD_KEYS = ["slug", "label", "hue", "hint", "blurb"] as const;
 export type CategoryFieldValues = Record<(typeof CATEGORY_FIELD_KEYS)[number], string>;
@@ -74,16 +82,34 @@ function readFields(form: FormData): CategoryFields {
   const [slugText, label, hue, hint, blurb] = CATEGORY_FIELD_KEYS.map((k) => raw[k].trim().replace(/\s+/g, " "));
   const slug = slugify(slugText!);
   if (!slug) throw new TaxonomyError("Give it a slug: lowercase letters, digits and hyphens.");
+  assertNotReserved(slug);
   if (!label) throw new TaxonomyError("Give it a label.");
   if (!(CATEGORY_HUES as readonly string[]).includes(hue!)) throw new TaxonomyError("Pick a color.");
   return { slug, label, hue: hue as CategoryHue, hint: hint!, blurb: blurb! };
 }
 
+/** Where `slug` would move to one place up or down `slugs`, or null when it is at that end or not there. */
+function neighbour(slugs: readonly string[], slug: string, direction: "up" | "down"): { at: number; to: number } | null {
+  const at = slugs.indexOf(slug);
+  const to = direction === "up" ? at - 1 : at + 1;
+  return at !== -1 && to >= 0 && to < slugs.length ? { at, to } : null;
+}
+
+/** Whether an item can move one place up or down its list (categories, tag groups, tags in a group). */
+export function canMoveIn(slugs: readonly string[], slug: string, direction: "up" | "down"): boolean {
+  return neighbour(slugs, slug, direction) !== null;
+}
+
+/** Swaps the item with that slug and its neighbour, in place (see canMoveIn). */
+export function moveIn<T>(list: T[], slugs: readonly string[], slug: string, direction: "up" | "down"): void {
+  const n = neighbour(slugs, slug, direction);
+  if (n) [list[n.at], list[n.to]] = [list[n.to]!, list[n.at]!];
+}
+
 /** Whether a category can move one place up or down: "other" stays last and nothing passes it. */
 export function canMove(categories: readonly string[], slug: string, direction: "up" | "down"): boolean {
-  const at = categories.indexOf(slug);
-  const to = direction === "up" ? at - 1 : at + 1;
-  return at !== -1 && slug !== OTHER && to >= 0 && to < categories.length && categories[to] !== OTHER;
+  const n = neighbour(categories, slug, direction);
+  return n !== null && slug !== OTHER && categories[n.to] !== OTHER;
 }
 
 /** Both settings as read, with their stored JSON so a save can check nobody changed them since. */
@@ -180,9 +206,7 @@ export async function reorderCategory(db: D1Database, slug: string, direction: "
   const read = await loadCategorySettings(db);
   const { categories, info } = read;
   if (!canMove(categories, slug, direction)) return;
-  const at = categories.indexOf(slug);
-  const to = direction === "up" ? at - 1 : at + 1;
-  [categories[at], categories[to]] = [categories[to]!, categories[at]!];
+  moveIn(categories, categories, slug, direction);
   await saveCategorySettings(db, read, categories, info);
 }
 

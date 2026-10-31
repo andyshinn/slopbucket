@@ -1,11 +1,11 @@
 ---
 import { env } from "cloudflare:workers";
-import Icon from "../../../../components/Icon.astro";
+import MoveButtons from "../../../../components/MoveButtons.astro";
 import Notice from "../../../../components/Notice.astro";
 import TagFields from "../../../../components/TagFields.astro";
 import Admin from "../../../../layouts/Admin.astro";
-import { canMoveIn, deleteTag, mergeTag, reorderTag, tagFieldsFromForm, tagOverview, updateTag } from "../../../../lib/tags-admin.ts";
-import { TaxonomyError } from "../../../../lib/taxonomy-admin.ts";
+import { deleteTag, mergeTag, reorderTag, tagFieldsFromForm, tagOverview, updateTag } from "../../../../lib/tags-admin.ts";
+import { TaxonomyError, canMoveIn } from "../../../../lib/taxonomy-admin.ts";
 import { btnPrimary, btnReject, card, input, label, num } from "../../../../lib/ui.ts";
 
 const slug = Astro.params.slug ?? "";
@@ -43,7 +43,8 @@ if (Astro.request.method === "POST") {
 const { groups } = await tagOverview(env.DB);
 const group = groups.find((g) => g.tags.some((t) => t.slug === slug));
 const tag = group?.tags.find((t) => t.slug === slug);
-if (!group || !tag) return Astro.redirect("/admin/taxonomy", 302);
+// Gone since the page loaded (another tab): say so on the list rather than dropping the error.
+if (!group || !tag) return Astro.redirect(error ? "/admin/taxonomy?error=gone" : "/admin/taxonomy", 303);
 const values = submitted ? tagFieldsFromForm(submitted) : { label: tag.label, slug, group: group.slug };
 const done = Astro.url.searchParams.get("done");
 const doneMessage: Record<string, string> = {
@@ -53,14 +54,14 @@ const doneMessage: Record<string, string> = {
 };
 const tools = `${num(tag.tools)} ${tag.tools === 1 ? "tool" : "tools"}`;
 const lastInGroup = group.tags.length === 1;
-const moveButton = "flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg text-sm font-medium text-stone-700 ring-1 ring-stone-300 ring-inset hover:bg-stone-50 disabled:opacity-40";
+const siblings = group.tags.map((t) => t.slug);
 ---
 
 <Admin title={`Edit ${tag.label}`} section="taxonomy">
-  <a href={`/admin/taxonomy#tag-${slug}`} class="text-sm font-medium text-brand-700">← Tags</a>
+  <a href={`/admin/taxonomy#tag-${encodeURIComponent(slug)}`} class="text-sm font-medium text-brand-700">← Tags</a>
   <h1 class="mt-2 text-lg font-semibold">{tag.label}</h1>
   <p class="mt-1 text-sm text-stone-600">
-    {group.label} · {tools} that aren't hidden. <a href={`/?tag=${slug}`} class="font-medium text-brand-700">See it on the site</a>
+    {group.label} · {tools} that aren't hidden. <a href={`/?tag=${encodeURIComponent(slug)}`} class="font-medium text-brand-700">See it on the site</a>
   </p>
 
   {done && doneMessage[done] && <div class="mt-4"><Notice>{doneMessage[done]}</Notice></div>}
@@ -73,17 +74,7 @@ const moveButton = "flex min-h-11 flex-1 items-center justify-center gap-2 round
     <button type="submit" class={`${btnPrimary} w-full`}>Save changes</button>
   </form>
 
-  <form method="post" class={`${card} mt-4 p-4`}>
-    <p class={label}>Position in {group.label}</p>
-    <div class="mt-2 flex gap-2">
-      <button type="submit" name="action" value="up" disabled={!canMoveIn(group.tags, slug, "up")} class={moveButton}>
-        <Icon name="arrowUp" class="size-4" /> Move up
-      </button>
-      <button type="submit" name="action" value="down" disabled={!canMoveIn(group.tags, slug, "down")} class={moveButton}>
-        <Icon name="arrowDown" class="size-4" /> Move down
-      </button>
-    </div>
-  </form>
+  <MoveButtons label={`Position in ${group.label}`} disabledUp={!canMoveIn(siblings, slug, "up")} disabledDown={!canMoveIn(siblings, slug, "down")} />
 
   <section class="mt-6">
     <h2 class="text-lg font-semibold">Merge into another tag</h2>

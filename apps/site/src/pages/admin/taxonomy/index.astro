@@ -35,10 +35,13 @@ if (Astro.request.method === "POST") {
     Astro.response.status = 422;
   }
 }
+if (Astro.url.searchParams.get("error") === "gone") error = "That tag or group isn't in the list any more. It may have changed in another tab.";
 
 const view = Astro.url.searchParams.get("view") === "categories" ? "categories" : "tags";
-const [overview, tags] = await Promise.all([categoryOverview(env.DB), tagOverview(env.DB)]);
-const share = otherShare(overview);
+// Only the shown view's counts: both scan every tool.
+const overview = view === "categories" ? await categoryOverview(env.DB) : null;
+const tags = view === "tags" ? await tagOverview(env.DB) : null;
+const share = overview && otherShare(overview);
 const done = Astro.url.searchParams.get("done");
 const doneMessage: Record<string, string> = {
   added: "Category added. New posts can use it now.",
@@ -54,7 +57,7 @@ const doneMessage: Record<string, string> = {
 const plural = (n: number, one: string, many = `${one}s`) => `${num(n)} ${n === 1 ? one : many}`;
 const segment = (active: boolean) =>
   `flex min-h-11 items-center justify-center rounded-md px-3 text-sm font-medium focus-visible:outline-2 focus-visible:outline-lime-600 ${active ? "bg-white text-stone-900 shadow-xs ring-1 ring-stone-200" : "text-stone-600 hover:text-stone-900"}`;
-const slugs = overview.rows.map((r) => r.slug);
+const slugs = overview?.rows.map((r) => r.slug) ?? [];
 ---
 
 <Admin title="Tags & categories" section="taxonomy">
@@ -68,11 +71,11 @@ const slugs = overview.rows.map((r) => r.slug);
   {error && <div class="mt-4"><Notice tone="error">{error}</Notice></div>}
 
   {
-    view === "tags" ? (
+    tags ? (
       <TagsView overview={tags} />
-    ) : (
+    ) : overview && (
       <>
-        {share !== null && (
+        {share != null && (
           <div class="mt-4 flex gap-3 rounded-xl bg-amber-50 p-4 text-sm text-amber-900 ring-1 ring-amber-200 ring-inset">
             <Icon name="exclamation" class="size-5 shrink-0 text-amber-600" />
             <p>

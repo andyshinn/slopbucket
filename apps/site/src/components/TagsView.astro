@@ -31,7 +31,7 @@ const outside = [
   {
     overview.groups.map((g) => (
       <section id={`group-${g.slug}`} class={`${card} scroll-mt-28`} aria-labelledby={`group-${g.slug}-h`}>
-        <a href={`/admin/taxonomy/groups/${g.slug}`} class="group flex min-h-11 items-center gap-3 border-b border-stone-100 px-4 py-2">
+        <a href={`/admin/taxonomy/groups/${encodeURIComponent(g.slug)}`} class="group flex min-h-11 items-center gap-3 border-b border-stone-100 px-4 py-2">
           <span class="min-w-0 flex-1">
             <span id={`group-${g.slug}-h`} class="block font-mono text-xs font-semibold tracking-wide text-stone-500 uppercase group-hover:text-lime-700">{g.label}</span>
             {g.hint && <span class="block text-xs text-stone-500">{g.hint}</span>}
@@ -42,7 +42,7 @@ const outside = [
         <ul class="divide-y divide-stone-100">
           {g.tags.map((t) => (
             <li id={`tag-${t.slug}`} class="scroll-mt-28">
-              <a href={`/admin/taxonomy/tags/${t.slug}`} class="group flex min-h-11 items-center gap-3 px-4 py-1.5">
+              <a href={`/admin/taxonomy/tags/${encodeURIComponent(t.slug)}`} class="group flex min-h-11 items-center gap-3 px-4 py-1.5">
                 <span class="min-w-0 flex-1">
                   <span class="font-medium text-stone-900 group-hover:text-lime-700">{t.label}</span>{" "}
                   <span class="font-mono text-xs text-stone-500">#{t.slug}</span>
@@ -53,7 +53,7 @@ const outside = [
             </li>
           ))}
           <li>
-            <a href={`/admin/taxonomy/tags/new?group=${g.slug}`} class="flex min-h-11 items-center gap-2 px-4 text-sm font-medium text-lime-700">
+            <a href={`/admin/taxonomy/tags/new?group=${encodeURIComponent(g.slug)}`} class="flex min-h-11 items-center gap-2 px-4 text-sm font-medium text-lime-700">
               <Icon name="plus" class="size-4" /> Add to {g.label}
             </a>
           </li>
