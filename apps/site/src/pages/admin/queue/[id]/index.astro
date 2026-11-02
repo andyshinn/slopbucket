@@ -6,6 +6,7 @@ import Notice from "../../../../components/Notice.astro";
 import QueueHeader from "../../../../components/QueueHeader.astro";
 import ReviewActions from "../../../../components/ReviewActions.astro";
 import Admin from "../../../../layouts/Admin.astro";
+import { renderMarkdown } from "../../../../lib/markdown.ts";
 import {
   ReviewError, approvePost, getQueueItem, isNewTool, listQueue, parseQueueFilters, queueCounts, queueLanguages, readArticleText, rejectPost, tagChips, withFilters,
 } from "../../../../lib/review.ts";
@@ -260,14 +261,15 @@ try {
             }
           </div>
 
-          {/* One <details>: collapsed on phones, always open from lg up (forced through ::details-content). */}
+          {/* One <details>: collapsed on phones, always open from lg up (forced through ::details-content).
+              The text is untrusted; renderMarkdown escapes raw HTML and drops non-http(s) links. */}
           <details class="mt-4 lg:details-content:[content-visibility:visible]">
             <summary class="flex min-h-11 cursor-pointer items-center text-sm font-medium text-brand-700 lg:min-h-0 lg:cursor-auto lg:font-mono lg:text-xs lg:font-normal lg:tracking-widest lg:text-stone-500 lg:uppercase">
               {text ? `Extracted text · ${num(text.length)} characters` : "No extracted text"}
             </summary>
             {
               textPreview && (
-                <p tabindex="0" class="mt-2 max-h-96 overflow-y-auto text-sm whitespace-pre-wrap text-stone-700 focus-visible:outline-2 focus-visible:outline-lime-600 lg:max-h-[32rem] lg:rounded-lg lg:bg-stone-50 lg:p-3">{textPreview}</p>
+                <div tabindex="0" class="markdown mt-2 max-h-96 overflow-y-auto text-sm break-words text-stone-700 focus-visible:outline-2 focus-visible:outline-lime-600 lg:max-h-[32rem] lg:rounded-lg lg:bg-stone-50 lg:p-3" set:html={renderMarkdown(textPreview)} />
               )
             }
           </details>

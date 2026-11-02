@@ -19,6 +19,7 @@
     "astro": "^7.3.5",
     "heroicons": "^2.2.0",
     "jose": "^6.2.12",
+    "marked": "18.1.1",
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
