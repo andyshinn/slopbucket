@@ -1,4 +1,4 @@
-import { type TrendingJob, getSetting } from "@slop-bucket/core";
+import { type TrendingJob, getSetting, latestStarsSql, lowStarToolSql } from "@slop-bucket/core";
 import type { Deps } from "./deps.ts";
 import { GITHUB_REPO, type RepoStats, USER_AGENT, fetchRepoStats, getJson, upsertRepoSnapshot } from "./http.ts";
 
@@ -189,7 +189,7 @@ async function githubGraphql(deps: Deps, tools: { id: number; github_repo: strin
 
 /** Recomputes trending_score and is_active for every tool that is not hidden. Returns how many were scored. */
 async function scoreTools(db: D1Database, now: number, warnings: string[]): Promise<number> {
-  const [weights, minStars] = await Promise.all([getSetting(db, "trending_weights"), getSetting(db, "github_min_stars")]);
+  const weights = await getSetting(db, "trending_weights");
   const { results } = await db
     .prepare(
       `WITH recent AS (
@@ -205,9 +205,10 @@ async function scoreTools(db: D1Database, now: number, warnings: string[]): Prom
            sum(CASE WHEN source != 'github' THEN coalesce(comments, 0) ELSE 0 END) AS comments
          FROM recent GROUP BY tool_id
        )
-       SELECT t.id, t.is_open_source, t.github_repo, coalesce(t.last_post_at, t.first_seen_at) AS last_at,
+       SELECT t.id, t.is_open_source, coalesce(t.last_post_at, t.first_seen_at) AS last_at,
          coalesce(e.sources, 0) AS sources, coalesce(e.points, 0) AS points, coalesce(e.comments, 0) AS comments,
-         (SELECT stars FROM repo_snapshots s WHERE s.tool_id = t.id ORDER BY date DESC LIMIT 1) AS stars_now,
+         ${latestStarsSql("t")} AS stars_now,
+         coalesce(${lowStarToolSql("t")}, 0) AS low_stars,
          (SELECT stars FROM repo_snapshots s WHERE s.tool_id = t.id AND date <= ?2 ORDER BY date DESC LIMIT 1) AS stars_week_ago
        FROM tools t LEFT JOIN engagement e ON e.tool_id = t.id
        WHERE t.status != 'hidden'`,
@@ -216,13 +217,13 @@ async function scoreTools(db: D1Database, now: number, warnings: string[]): Prom
     .all<{
       id: number;
       is_open_source: number | null;
-      github_repo: string | null;
       last_at: string;
       sources: number;
       points: number;
       comments: number;
       stars_now: number | null;
       stars_week_ago: number | null;
+      low_stars: 0 | 1;
     }>();
 
   const activeSince = iso(now - ACTIVE_DAYS * DAY);
@@ -231,9 +232,7 @@ async function scoreTools(db: D1Database, now: number, warnings: string[]): Prom
     // Star growth needs a snapshot from a week ago; closed-source tools have no star term.
     const starsGained7d = t.is_open_source !== 0 && t.stars_now !== null && t.stars_week_ago !== null ? Math.max(0, t.stars_now - t.stars_week_ago) : 0;
     const hours = (now - Date.parse(t.last_at)) / 3_600_000;
-    // The same test as review routing (lowStarToolSql): a repo with no snapshot counts as under.
-    const lowStars = t.github_repo !== null && (t.stars_now ?? 0) < minStars;
-    let score = trendingScore({ sources: t.sources, points: t.points, comments: t.comments, starsGained7d, hours, lowStars }, weights);
+    let score = trendingScore({ sources: t.sources, points: t.points, comments: t.comments, starsGained7d, hours, lowStars: t.low_stars === 1 }, weights);
     // D1 binds NaN as NULL, which the NOT NULL column rejects and fails the whole batch.
     if (!Number.isFinite(score)) {
       unscorable.push(t.id);

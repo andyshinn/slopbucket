@@ -94,6 +94,10 @@ describe("updateTool", () => {
       { kind: "domain", value: "worktrunk.dev" },
       { kind: "name", value: "worktrunk" },
     ]);
+    // A repo with no snapshot counts as under the star floor (lowStarToolSql); a big one doesn't.
+    expect(t).toMatchObject({ stars: null, low_stars: 1 });
+    await db.prepare("INSERT INTO repo_snapshots (tool_id, date, stars) VALUES (?, '2026-10-01', 5000)").bind(id).run();
+    expect(await getTool(db, id)).toMatchObject({ stars: 5000, low_stars: 0 });
   });
 
   it("limits posts unless asked for more", async () => {

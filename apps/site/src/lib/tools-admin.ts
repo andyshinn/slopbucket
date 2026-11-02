@@ -2,6 +2,7 @@ import {
   getSetting,
   hostOf,
   latestStarsSql,
+  lowStarToolSql,
   isGenericHost,
   normalizeGithubRepo,
   normalizeHomepage,
@@ -108,6 +109,8 @@ export interface ToolDetail {
   github_repo: string | null;
   /** Stars in the latest repo snapshot; null without one. */
   stars: number | null;
+  /** Repo under github_min_stars, or not snapshotted yet (lowStarToolSql). */
+  low_stars: 0 | 1;
   is_open_source: number | null;
   status: ToolStatus;
   first_seen_at: string;
@@ -127,7 +130,7 @@ export async function getTool(db: D1Database, id: number, postLimit = POSTS_DEFA
     db
       .prepare(
         `SELECT t.id, t.slug, t.name, t.description, t.category, t.tags, t.homepage_url, t.github_repo, ${latestStarsSql("t")} AS stars,
-           t.is_open_source, t.status, t.first_seen_at, t.last_post_at FROM tools t WHERE t.id = ?`,
+           coalesce(${lowStarToolSql("t")}, 0) AS low_stars, t.is_open_source, t.status, t.first_seen_at, t.last_post_at FROM tools t WHERE t.id = ?`,
       )
       .bind(id),
     db

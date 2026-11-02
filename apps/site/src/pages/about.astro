@@ -30,7 +30,7 @@ const p = "mt-3 text-stone-600 dark:text-stone-300";
       {w.low_star < 1 && <> A tool whose GitHub repo has fewer than {minStars} stars has its score multiplied by {w.low_star}.</>}
     </p>
     <p class="mt-3 font-mono text-xs text-stone-500 dark:text-stone-400">
-      score = ({w.w_s} × sources + {w.w_e} × ln(1 + upvotes + 2 × comments) + {w.w_g} × ln(1 + stars gained)) / (hours since last post + 2)^{w.g}{w.low_star < 1 && <> × {w.low_star} under {minStars} stars</>}
+      score = ({w.w_s} × sources + {w.w_e} × ln(1 + upvotes + 2 × comments) + {w.w_g} × ln(1 + stars gained)) / (hours since last post + 2)^{w.g}
     </p>
   </article>
 </Public>

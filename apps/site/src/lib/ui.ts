@@ -52,6 +52,14 @@ export function aboutDuration(minutes: number): string {
 /** A count with thousands separators: "1,245". */
 export const num = (n: number) => n.toLocaleString("en");
 
+/** A repo's star count from its latest snapshot, for the admin ("not checked yet" without one). */
+export const starsLabel = (stars: number | null): string =>
+  stars === null ? "Stars not checked yet" : `${num(stars)} ${stars === 1 ? "star" : "stars"}`;
+
+/** Why a tool is under the star floor (lowStarToolSql), in the queue and on the tool page. */
+export const underFloorLabel = (stars: number | null, minStars: number): string =>
+  stars === null ? `Counts as under the ${num(minStars)}-star floor until checked` : `Under the ${num(minStars)}-star floor`;
+
 /** A run's length: "9s", "1m 30s", "2h 5m". */
 export function shortDuration(ms: number): string {
   const s = Math.max(0, Math.round(ms / 1000));
