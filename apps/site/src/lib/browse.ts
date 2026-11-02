@@ -4,6 +4,7 @@
 
 import { type TagGroups, getSetting } from "@slop-bucket/core";
 import { PAGE_SIZE, ROW_COLUMNS, type RawRow, type ToolRow, pageParam, toRow } from "./public.ts";
+import { escapeHtml } from "./ui.ts";
 
 export const SORTS = { trending: "Trending", new: "Newest", stars: "Most stars", discussed: "Most discussed", best: "Best match" } as const;
 export type Sort = keyof typeof SORTS;
@@ -228,8 +229,6 @@ export async function browse(db: D1Database, f: Filters, groups: TagGroups): Pro
     },
   };
 }
-
-const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 /** FTS5 highlight() output as safe HTML: text escaped, match markers turned into <mark>. */
 export function highlightHtml(marked: string): string {

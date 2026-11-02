@@ -56,7 +56,6 @@ const queued = post.status === "queued";
 const confidence = confidenceChip(post.confidence);
 const editHref = withFilters(`/admin/queue/${id}/edit`, filters);
 const moveHref = withFilters(`/admin/queue/${id}/reassign`, filters);
-const textPreview = text?.slice(0, 6000);
 
 const fmt = (v: unknown) => (v === null || v === undefined || v === "" ? "—" : Array.isArray(v) ? v.join(", ") || "—" : String(v));
 // [label, value, optional link]
@@ -268,8 +267,8 @@ try {
               {text ? `Extracted text · ${num(text.length)} characters` : "No extracted text"}
             </summary>
             {
-              textPreview && (
-                <div tabindex="0" class="markdown mt-2 max-h-96 overflow-y-auto text-sm break-words text-stone-700 focus-visible:outline-2 focus-visible:outline-lime-600 lg:max-h-[32rem] lg:rounded-lg lg:bg-stone-50 lg:p-3" set:html={renderMarkdown(textPreview)} />
+              text && (
+                <div tabindex="0" class="markdown mt-2 max-h-96 overflow-y-auto text-sm break-words text-stone-700 focus-visible:outline-2 focus-visible:outline-lime-600 lg:max-h-[32rem] lg:rounded-lg lg:bg-stone-50 lg:p-3" set:html={renderMarkdown(text, 6000)} />
               )
             }
           </details>

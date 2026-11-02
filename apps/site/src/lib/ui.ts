@@ -77,6 +77,10 @@ export function hostname(url: string): string {
   }
 }
 
+/** Escapes text for HTML content and quoted attribute values. */
+export const escapeHtml = (s: string) =>
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+
 /** An http(s) URL safe to use as a link, or null (never javascript: or data: URLs). */
 export function safeHref(url: unknown): string | null {
   if (typeof url !== "string") return null;

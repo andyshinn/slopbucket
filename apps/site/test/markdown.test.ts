@@ -46,3 +46,18 @@ describe("renderMarkdown", () => {
     expect(html).toContain("a &lt; b &amp;");
   });
 });
+
+describe("renderMarkdown with a length cap", () => {
+  it("notes the cut after the HTML, so an open code fence can't swallow it", () => {
+    const text = "Intro\n\n```sh\ncargo install paldron\ncargo run --release\n```\n\nAfter";
+    const cut = text.indexOf("cargo run");
+    const html = renderMarkdown(text, cut);
+    expect(html).toContain('<pre><code class="language-sh">cargo install paldron\n</code></pre>');
+    expect(html).toMatch(/<\/pre>\n?<p class="markdown-cut">… Showing the first \d+ of \d+ characters\.<\/p>\n$/);
+    expect(html).not.toContain("After");
+  });
+
+  it("adds no note when the text fits", () => {
+    expect(renderMarkdown("short", 6000)).toBe("<p>short</p>\n");
+  });
+});

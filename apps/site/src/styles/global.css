@@ -54,3 +54,4 @@
 .markdown :is(th, td) { border: 1px solid var(--color-stone-200); padding: 0.25em 0.5em; text-align: left; vertical-align: top; }
 .markdown th { background: var(--color-stone-100); font-weight: 600; }
 .markdown hr { border-color: var(--color-stone-200); }
+.markdown .markdown-cut { margin-top: 1em; font-style: italic; color: var(--color-stone-500); }

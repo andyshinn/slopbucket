@@ -1,8 +1,9 @@
 import { Marked, type Tokens } from "marked";
-import { safeHref } from "./ui.ts";
+import { escapeHtml, num, safeHref } from "./ui.ts";
 
-const escapeHtml = (s: string) =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+/** The one way rendered markdown links out, so the safety attributes can't drift apart. */
+const anchor = (url: string, label: string, title?: string | null) =>
+  `<a href="${escapeHtml(url)}"${title ? ` title="${escapeHtml(title)}"` : ""} target="_blank" rel="noopener noreferrer nofollow">${label}</a>`;
 
 /**
  * Markdown for text fetched from anywhere (READMEs, linked pages), so nothing in it is trusted:
@@ -21,19 +22,23 @@ const marked = new Marked({
     link({ href, title, tokens }: Tokens.Link) {
       const label = this.parser.parseInline(tokens);
       const url = safeHref(href);
-      if (!url) return label;
-      const t = title ? ` title="${escapeHtml(title)}"` : "";
-      return `<a href="${escapeHtml(url)}"${t} target="_blank" rel="noopener noreferrer nofollow">${label}</a>`;
+      return url ? anchor(url, label, title) : label;
     },
     image({ href, text }: Tokens.Image) {
       const label = `[image${text ? `: ${escapeHtml(text)}` : ""}]`;
       const url = safeHref(href);
-      return url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer nofollow">${label}</a>` : label;
+      return url ? anchor(url, label) : label;
     },
   },
 });
 
-/** Renders untrusted markdown (or plain text) to HTML that is safe to inject with set:html. */
-export function renderMarkdown(text: string): string {
-  return marked.parse(text, { async: false });
+/**
+ * Renders untrusted markdown (or plain text) to HTML that is safe to inject with set:html.
+ * Text over `maxChars` is cut there, and a note follows the rendered HTML, outside the markdown,
+ * so a cut inside a code fence or table can't swallow it.
+ */
+export function renderMarkdown(text: string, maxChars = Infinity): string {
+  const html = marked.parse(text.slice(0, maxChars), { async: false });
+  if (text.length <= maxChars) return html;
+  return `${html}<p class="markdown-cut">… Showing the first ${num(maxChars)} of ${num(text.length)} characters.</p>\n`;
 }
