@@ -4,7 +4,7 @@
 // filters inline; on phones the same form folds into a <details> whose summary
 // names the active filters. One form for both, forced open on desktop through
 // ::details-content.
-import { BAND_KEYS, CONFIDENCE_BANDS, ORDER_KEYS, QUEUE_ORDERS, QUEUE_SOURCES, type QueueFilters } from "../lib/review.ts";
+import { BAND_KEYS, CONFIDENCE_BANDS, ORDER_KEYS, QUEUE_ORDERS, QUEUE_SOURCES, STAR_FILTER_KEYS, type QueueFilters, starFilterLabels } from "../lib/review.ts";
 import { SOURCE_LABELS, btnSecondary, num } from "../lib/ui.ts";
 
 interface Props {
@@ -13,12 +13,16 @@ interface Props {
   matching: number;
   /** All queued posts. */
   total: number;
+  /** github_min_stars, for the star filter's labels. */
+  minStars: number;
 }
-const { filters, matching, total } = Astro.props;
-const filtered = filters.source !== "" || filters.band !== "";
+const { filters, matching, total, minStars } = Astro.props;
+const starLabels = starFilterLabels(minStars);
+const filtered = filters.source !== "" || filters.band !== "" || filters.stars !== "";
 const active = [
   filters.source && SOURCE_LABELS[filters.source],
   filters.band && CONFIDENCE_BANDS[filters.band],
+  filters.stars && starLabels[filters.stars],
   filters.order !== "oldest" && QUEUE_ORDERS[filters.order],
 ].filter(Boolean);
 const select = "h-11 w-full rounded-lg bg-white px-2 text-base text-stone-900 outline-1 -outline-offset-1 outline-stone-300 focus:outline-2 focus:-outline-offset-2 focus:outline-lime-600 lg:w-auto lg:text-sm";
@@ -47,6 +51,13 @@ const fieldLabel = "text-sm font-medium text-stone-900 lg:sr-only";
         <select id="qf-band" name="band" class={select}>
           <option value="">Any confidence</option>
           {BAND_KEYS.map((b) => <option value={b} selected={filters.band === b}>{CONFIDENCE_BANDS[b]}</option>)}
+        </select>
+      </div>
+      <div class="grid gap-1 lg:block">
+        <label for="qf-stars" class={fieldLabel}>GitHub stars</label>
+        <select id="qf-stars" name="stars" class={select}>
+          <option value="">Any stars</option>
+          {STAR_FILTER_KEYS.map((s) => <option value={s} selected={filters.stars === s}>{starLabels[s]}</option>)}
         </select>
       </div>
       <div class="grid gap-1 lg:block">

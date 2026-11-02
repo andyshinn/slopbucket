@@ -10,7 +10,7 @@ const hoursAgo = (h: number) => new Date(NOW - h * 3_600_000).toISOString();
 const db = env.DB;
 
 describe("trendingScore", () => {
-  const w = { w_s: 3, w_e: 1, w_g: 1.5, g: 1.5 };
+  const w = { w_s: 3, w_e: 1, w_g: 1.5, g: 1.5, low_star: 0.5 };
   it("follows the design formula", () => {
     const s = trendingScore({ sources: 2, points: 100, comments: 20, starsGained7d: 50, hours: 10 }, w);
     expect(s).toBeCloseTo((3 * 2 + Math.log(1 + 140) + 1.5 * Math.log(51)) / Math.pow(12, 1.5), 10);
@@ -19,6 +19,11 @@ describe("trendingScore", () => {
     const base = { sources: 1, points: 10, comments: 0, starsGained7d: 0, hours: 1 };
     expect(trendingScore({ ...base, hours: 100 }, w)).toBeLessThan(trendingScore(base, w));
     expect(trendingScore({ ...base, starsGained7d: -20 }, w)).toBe(trendingScore(base, w));
+  });
+  it("multiplies a low-star tool's score by low_star", () => {
+    const base = { sources: 2, points: 30, comments: 4, starsGained7d: 0, hours: 3 };
+    expect(trendingScore({ ...base, lowStars: true }, w)).toBeCloseTo(trendingScore(base, w) * 0.5, 10);
+    expect(trendingScore({ ...base, lowStars: true }, { ...w, low_star: 1 })).toBe(trendingScore(base, w));
   });
   it("treats net-negative engagement as none", () => {
     const base = { sources: 1, points: 0, comments: 0, starsGained7d: 0, hours: 1 };
@@ -92,7 +97,7 @@ describe("runTrendingJob", () => {
     const tools = Object.fromEntries(
       (await db.prepare("SELECT id, trending_score, is_active FROM tools").all<{ id: number; trending_score: number; is_active: number }>()).results.map((t) => [t.id, t]),
     );
-    const w = { w_s: 3, w_e: 1, w_g: 1.5, g: 1.5 };
+    const w = { w_s: 3, w_e: 1, w_g: 1.5, g: 1.5, low_star: 0.5 };
     // Tool 1: HN + lobste.rs + GitHub sources; 135 points, 45 comments (no GitHub stars); 60 stars gained.
     expect(tools[1]!.trending_score).toBeCloseTo(trendingScore({ sources: 3, points: 135, comments: 45, starsGained7d: 60, hours: 5 }, w), 6);
     expect(tools[2]!.trending_score).toBeCloseTo(trendingScore({ sources: 1, points: 4, comments: 1, starsGained7d: 0, hours: 5 }, w), 6);
@@ -136,11 +141,29 @@ describe("runTrendingJob", () => {
     });
     await runTrendingJob({ kind: "trending", mode: "daily" }, makeDeps({ fetch }), NOW);
     const tools = (await db.prepare("SELECT trending_score FROM tools ORDER BY id").all<{ trending_score: number }>()).results;
-    const w = { w_s: 3, w_e: 1, w_g: 1.5, g: 1.5 };
+    const w = { w_s: 3, w_e: 1, w_g: 1.5, g: 1.5, low_star: 0.5 };
     expect(tools[0]!.trending_score).toBeCloseTo(trendingScore({ sources: 1, points: 0, comments: 0, starsGained7d: 0, hours: 2 }, w), 6);
     expect(tools[1]!.trending_score).toBeCloseTo(trendingScore({ sources: 1, points: 6, comments: 0, starsGained7d: 0, hours: 2 }, w), 6);
     const run = await db.prepare("SELECT items_fetched, error FROM source_runs").first();
     expect(run).toMatchObject({ items_fetched: 2, error: null });
+  });
+
+  it("applies low_star to tools whose repo is under github_min_stars or has no snapshot", async () => {
+    // github_min_stars is 10 in tests. Inactive tools, so the job makes no GitHub calls.
+    await tool(1, { repo: "acme/tiny", lastPost: hoursAgo(2) });
+    await tool(2, { repo: "acme/big", lastPost: hoursAgo(2) });
+    await tool(3, { repo: "acme/unchecked", lastPost: hoursAgo(2) });
+    await tool(4, { repo: null, open: 0, lastPost: hoursAgo(2) });
+    for (const id of [1, 2, 3, 4]) await post(id, "github", `acme/${id}`, hoursAgo(2));
+    await db.prepare("INSERT INTO repo_snapshots (tool_id, date, stars) VALUES (1, '2026-10-07', 3), (2, '2026-10-07', 500)").run();
+    await runTrendingJob({ kind: "trending", mode: "daily" }, makeDeps({ fetch: fakeFetch() }), NOW);
+    const scores = (await db.prepare("SELECT trending_score FROM tools ORDER BY id").all<{ trending_score: number }>()).results.map((t) => t.trending_score);
+    const w = { w_s: 3, w_e: 1, w_g: 1.5, g: 1.5, low_star: 0.5 };
+    const full = trendingScore({ sources: 1, points: 0, comments: 0, starsGained7d: 0, hours: 2 }, w);
+    expect(scores[0]).toBeCloseTo(full * 0.5, 6);
+    expect(scores[1]).toBeCloseTo(full, 6);
+    expect(scores[2]).toBeCloseTo(full * 0.5, 6);
+    expect(scores[3]).toBeCloseTo(full, 6); // no repo, no penalty
   });
 
   it("scores 0 and warns instead of failing the batch when a score is not a number", async () => {

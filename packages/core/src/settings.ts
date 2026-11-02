@@ -37,6 +37,8 @@ export const settingSchemas = {
     w_e: z.number(),
     w_g: z.number(),
     g: z.number(),
+    // Multiplies the score of a tool whose repo is under github_min_stars (1 = no penalty).
+    low_star: z.number().min(0).max(1),
   }),
   categories: z
     .array(slug)

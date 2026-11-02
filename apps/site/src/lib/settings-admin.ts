@@ -37,7 +37,7 @@ export const SETTING_FIELDS: SettingField[] = [
       text: "Applies from the next fetch and to newly classified posts. To apply it to tools already public, use Send low-star tools to review.",
       link: { href: "/admin/status#jobs-h", label: "Status → Jobs" },
     } },
-  { key: "trending_weights", label: "Trending weights", help: "Source weight, engagement weight, star-growth weight and gravity exponent.", kind: "weights",
+  { key: "trending_weights", label: "Trending weights", help: "Source weight, engagement weight, star-growth weight and gravity exponent. Under star floor multiplies the score of a tool whose repo is under GitHub minimum stars (0 to 1; 1 turns it off).", kind: "weights",
     afterSave: { text: "Scores use it at the next daily update, or run it now.", link: { href: "/admin/status#trending-h", label: "Status → Trending" } },
   },
 ];
@@ -51,7 +51,7 @@ for (const key of SETTING_KEYS) {
 }
 
 export const REASONING_LEVELS = ["", "none", "low", "medium", "high"] as const;
-export const WEIGHT_KEYS = ["w_s", "w_e", "w_g", "g"] as const;
+export const WEIGHT_KEYS = ["w_s", "w_e", "w_g", "g", "low_star"] as const;
 
 export async function loadSettings(db: D1Database): Promise<Record<string, unknown>> {
   const { results } = await db.prepare("SELECT key, value FROM settings").all<{ key: string; value: string }>();

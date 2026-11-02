@@ -20,7 +20,7 @@ import {
   splitMerge,
   updateTool,
 } from "../../../../lib/tools-admin.ts";
-import { SOURCE_LABELS, btnPrimary, btnReject, btnSecondary, card, input, label, safeHref, timeAgo, toolStatusChip } from "../../../../lib/ui.ts";
+import { SOURCE_LABELS, btnPrimary, btnReject, btnSecondary, card, input, label, num, safeHref, timeAgo, toolStatusChip } from "../../../../lib/ui.ts";
 
 const id = Number(Astro.params.id);
 if (!Number.isInteger(id) || id <= 0) return Astro.redirect("/admin/tools", 302);
@@ -55,14 +55,17 @@ if (Astro.request.method === "POST") {
 }
 
 const showAllPosts = Astro.url.searchParams.get("posts") === "all";
-const [tool, categories, categoryInfo, tagGroups, merges, mergedAway] = await Promise.all([
+const [tool, categories, categoryInfo, tagGroups, merges, mergedAway, minStars] = await Promise.all([
   getTool(env.DB, id, showAllPosts ? POSTS_ALL : POSTS_DEFAULT),
   getSetting(env.DB, "categories"),
   Astro.locals.categoryInfo(),
   getSetting(env.DB, "tags"),
   mergeHistory(env.DB, id),
   mergedInto(env.DB, id),
+  getSetting(env.DB, "github_min_stars"),
 ]);
+// The same test as review routing (lowStarToolSql): a repo with no snapshot counts as under.
+const lowStars = tool !== null && tool.github_repo !== null && (tool.stars ?? 0) < minStars;
 if (!tool) return Astro.redirect("/admin/tools", 302);
 
 // Re-show what was submitted after an error; otherwise the stored values.
@@ -95,6 +98,15 @@ const description = oneLine(field("description", tool.description));
     First seen {timeAgo(tool.first_seen_at)} · {tool.postCount} {tool.postCount === 1 ? "post" : "posts"}
     {homepage && <> · <a href={homepage} class="font-medium text-brand-700" target="_blank" rel="noopener noreferrer">Website</a></>}
     {tool.github_repo && <> · <a href={`https://github.com/${tool.github_repo}`} class="font-medium text-brand-700" target="_blank" rel="noopener noreferrer">GitHub</a></>}
+    {tool.github_repo && (
+      <>
+        {" · "}
+        <span class={lowStars ? "font-semibold text-amber-800" : undefined}>
+          {tool.stars === null ? "stars not checked yet" : `${num(tool.stars)} ${tool.stars === 1 ? "star" : "stars"}`}
+          {lowStars && ` (under ${num(minStars)})`}
+        </span>
+      </>
+    )}
   </p>
 
   {done && doneMessage[done] && <div class="mt-4"><Notice>{doneMessage[done]}</Notice></div>}

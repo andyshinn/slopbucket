@@ -1,4 +1,6 @@
-import { type Classification, type TagGroups, classificationSchema, getSetting, resolveTool, tagSlugs } from "@slop-bucket/core";
+import {
+  type Classification, type TagGroups, classificationSchema, getSetting, latestStarsSql, lowStarToolSql, resolveTool, tagSlugs,
+} from "@slop-bucket/core";
 
 export interface QueuePost {
   id: number;
@@ -21,6 +23,11 @@ export interface ToolSummary {
   status: string;
   category: string | null;
   posts: number;
+  github_repo: string | null;
+  /** Stars in the latest repo snapshot; null without a repo or a snapshot. */
+  stars: number | null;
+  /** Repo under github_min_stars, or not snapshotted yet (lowStarToolSql): never publishes without review. */
+  low_stars: 0 | 1;
 }
 
 export interface QueueItem {
@@ -30,7 +37,8 @@ export interface QueueItem {
 }
 
 const TOOL_SUMMARY = `SELECT t.id, t.name, t.slug, t.status, t.category,
-  (SELECT count(*) FROM posts p WHERE p.tool_id = t.id) AS posts FROM tools t`;
+  (SELECT count(*) FROM posts p WHERE p.tool_id = t.id) AS posts, t.github_repo,
+  ${latestStarsSql("t")} AS stars, coalesce(${lowStarToolSql("t")}, 0) AS low_stars FROM tools t`;
 
 // Queue filters, from the filter bar (a bar on desktop, a collapsed panel on
 // phones). They ride along in the URL (list links, Edit, Move, and the redirect
@@ -38,6 +46,10 @@ const TOOL_SUMMARY = `SELECT t.id, t.name, t.slug, t.status, t.category,
 export const QUEUE_SOURCES = ["hn", "lobsters", "github", "producthunt"] as const;
 export const CONFIDENCE_BANDS = { high: "90% and up", mid: "70–89%", low: "Under 70% or no score" } as const;
 export const QUEUE_ORDERS = { oldest: "Oldest first", newest: "Newest first", lowest: "Lowest confidence first" } as const;
+/** Star filter labels, given github_min_stars. "Under" follows lowStarToolSql: a repo with no snapshot yet counts. */
+export const starFilterLabels = (minStars: number) => ({ hide: `Hide under ${minStars} stars`, only: `Only under ${minStars} stars` }) as const;
+export const STAR_FILTER_KEYS = ["hide", "only"] as const;
+export type StarFilter = (typeof STAR_FILTER_KEYS)[number];
 export type ConfidenceBand = keyof typeof CONFIDENCE_BANDS;
 export type QueueOrder = keyof typeof QUEUE_ORDERS;
 export const BAND_KEYS = Object.keys(CONFIDENCE_BANDS) as ConfidenceBand[];
@@ -48,10 +60,12 @@ export interface QueueFilters {
   source: (typeof QUEUE_SOURCES)[number] | "";
   /** "" for any confidence. */
   band: ConfidenceBand | "";
+  /** "" for any stars; hide or only show posts whose tool's repo is under the star floor. */
+  stars: StarFilter | "";
   order: QueueOrder;
 }
 
-const DEFAULT_QUEUE_FILTERS: QueueFilters = { source: "", band: "", order: "oldest" };
+const DEFAULT_QUEUE_FILTERS: QueueFilters = { source: "", band: "", stars: "", order: "oldest" };
 
 const oneOf = <T extends string>(value: string | null, allowed: readonly T[]): T | undefined =>
   allowed.find((a) => a === value);
@@ -61,6 +75,7 @@ export function parseQueueFilters(params: URLSearchParams): QueueFilters {
   return {
     source: oneOf(params.get("source"), QUEUE_SOURCES) ?? DEFAULT_QUEUE_FILTERS.source,
     band: oneOf(params.get("band"), BAND_KEYS) ?? DEFAULT_QUEUE_FILTERS.band,
+    stars: oneOf(params.get("stars"), STAR_FILTER_KEYS) ?? DEFAULT_QUEUE_FILTERS.stars,
     order: oneOf(params.get("order"), ORDER_KEYS) ?? DEFAULT_QUEUE_FILTERS.order,
   };
 }
@@ -70,6 +85,7 @@ export function queueFilterQuery(f: QueueFilters): string {
   const q = new URLSearchParams();
   if (f.source !== DEFAULT_QUEUE_FILTERS.source) q.set("source", f.source);
   if (f.band !== DEFAULT_QUEUE_FILTERS.band) q.set("band", f.band);
+  if (f.stars !== DEFAULT_QUEUE_FILTERS.stars) q.set("stars", f.stars);
   if (f.order !== DEFAULT_QUEUE_FILTERS.order) q.set("order", f.order);
   return q.toString();
 }
@@ -92,6 +108,9 @@ const ORDER_SQL: Record<QueueOrder, { key: (alias: string) => string; dir: "ASC"
   lowest: { key: (a) => `coalesce(${a}.confidence, -1)`, dir: "ASC" },
 };
 
+/** The post `p` belongs to a tool whose repo is under the star floor (a post with no tool never does). */
+const LOW_STAR_POST = `EXISTS (SELECT 1 FROM tools lt WHERE lt.id = p.tool_id AND ${lowStarToolSql("lt")})`;
+
 /** The filters as conditions on posts `p` ("1" when none apply), not counting the queued status. */
 function filterSql(f: QueueFilters): { sql: string; binds: unknown[] } {
   const parts: string[] = [];
@@ -101,6 +120,7 @@ function filterSql(f: QueueFilters): { sql: string; binds: unknown[] } {
     binds.push(f.source);
   }
   if (f.band) parts.push(BAND_SQL[f.band]);
+  if (f.stars) parts.push(`${f.stars === "hide" ? "NOT " : ""}${LOW_STAR_POST}`);
   return { sql: parts.length ? parts.join(" AND ") : "1", binds };
 }
 
@@ -157,6 +177,9 @@ export interface QueueListItem {
   tool_name: string | null;
   /** Same test as isNewTool: the only post of a still-queued tool. */
   new_tool: 0 | 1;
+  /** As on ToolSummary: null without a tool, repo or snapshot. */
+  stars: number | null;
+  low_stars: 0 | 1;
 }
 
 export const QUEUE_LIST_SIZE = 50;
@@ -167,7 +190,8 @@ export async function listQueue(db: D1Database, f: QueueFilters, limit = QUEUE_L
   const { results } = await db
     .prepare(
       `SELECT p.id, p.source, p.title, p.posted_at, p.confidence, t.name AS tool_name,
-         coalesce(t.status = 'queued' AND (SELECT count(*) FROM posts p2 WHERE p2.tool_id = t.id) <= 1, 0) AS new_tool
+         coalesce(t.status = 'queued' AND (SELECT count(*) FROM posts p2 WHERE p2.tool_id = t.id) <= 1, 0) AS new_tool,
+         ${latestStarsSql("t")} AS stars, coalesce(${lowStarToolSql("t")}, 0) AS low_stars
        FROM posts p LEFT JOIN tools t ON t.id = p.tool_id
        WHERE ${where} ${orderBy(f)} LIMIT ?`,
     )

@@ -1,4 +1,5 @@
 ---
+import { getSetting } from "@slop-bucket/core";
 import { env } from "cloudflare:workers";
 import Icon from "../../../components/Icon.astro";
 import QueueHeader from "../../../components/QueueHeader.astro";
@@ -12,11 +13,11 @@ const after = Number(Astro.url.searchParams.get("after") ?? 0) || 0;
 const filters = parseQueueFilters(Astro.url.searchParams);
 const next = await nextQueuedId(env.DB, after, filters);
 if (next !== null) return Astro.redirect(withFilters(`/admin/queue/${next}`, filters), 302);
-const { total } = await queueCounts(env.DB);
+const [{ total }, minStars] = await Promise.all([queueCounts(env.DB), getSetting(env.DB, "github_min_stars")]);
 ---
 
 <Admin title="Review queue" section="queue" full>
-  <QueueHeader filters={filters} matching={0} total={total} />
+  <QueueHeader filters={filters} matching={0} total={total} minStars={minStars} />
   <div class="mt-16 text-center">
     {
       total > 0 ? (
