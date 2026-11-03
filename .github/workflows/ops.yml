@@ -117,10 +117,8 @@ jobs:
           SOURCE: ${{ inputs.source }}
           DAYS: ${{ inputs.days }}
         run: |
-          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/queues"
+          queue=$("$GITHUB_WORKSPACE/.github/scripts/queue-url.sh" "$FETCH_QUEUE")
           auth="Authorization: Bearer $CLOUDFLARE_API_TOKEN"
-          queue_id=$(curl -fsS -H "$auth" "$api?per_page=100" | jq -r --arg n "$FETCH_QUEUE" '.result[] | select(.queue_name == $n) | .queue_id')
-          [ -n "$queue_id" ] || { echo "::error::Queue $FETCH_QUEUE not found. Run the Bootstrap workflow first."; exit 1; }
 
           if [ "$ACTION" = backfill ]; then
             printf '%s' "$DAYS" | grep -qE '^[0-9]+$' || { echo "::error::days must be a whole number"; exit 1; }
@@ -136,7 +134,7 @@ jobs:
               job=$(jq -nc --arg s "$s" '{kind:"fetch",source:$s,mode:"manual"}')
             fi
             jq -nc --argjson job "$job" '{body:$job,content_type:"json"}' \
-              | curl -fsS -X POST -H "$auth" -H "Content-Type: application/json" --data @- "$api/$queue_id/messages" > /dev/null
+              | curl -fsS -X POST -H "$auth" -H "Content-Type: application/json" --data @- "$queue/messages" > /dev/null
             echo "Enqueued $job" | tee -a "$GITHUB_STEP_SUMMARY"
           done
 
@@ -147,12 +145,9 @@ jobs:
         if: inputs.action == 'detect-languages'
         run: |
           set -euo pipefail
-          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/queues"
-          auth="Authorization: Bearer $CLOUDFLARE_API_TOKEN"
-          queue_id=$(curl -fsS -H "$auth" "$api?per_page=100" | jq -r --arg n "$FETCH_QUEUE" '.result[] | select(.queue_name == $n) | .queue_id')
-          [ -n "$queue_id" ] || { echo "::error::Queue $FETCH_QUEUE not found. Run the Bootstrap workflow first."; exit 1; }
+          queue=$("$GITHUB_WORKSPACE/.github/scripts/queue-url.sh" "$FETCH_QUEUE")
           jq -nc '{body:{kind:"languages"},content_type:"json"}' \
-            | curl -fsS -X POST -H "$auth" -H "Content-Type: application/json" --data @- "$api/$queue_id/messages" > /dev/null
+            | curl -fsS -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" --data @- "$queue/messages" > /dev/null
           echo "Enqueued the languages job." | tee -a "$GITHUB_STEP_SUMMARY"
 
       # After lowering review_threshold: publish unreviewed queued posts already at or
@@ -212,12 +207,10 @@ jobs:
             | jq -c '[.[0].results[].id | {body: {kind: "classify", post_id: ., force: true}, content_type: "json"}]' > jobs.json
           total=$(jq length jobs.json)
 
-          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/queues"
+          queue=$("$GITHUB_WORKSPACE/.github/scripts/queue-url.sh" sb-classify)
           auth="Authorization: Bearer $CLOUDFLARE_API_TOKEN"
-          queue_id=$(curl -fsS -H "$auth" "$api?per_page=100" | jq -r '.result[] | select(.queue_name == "sb-classify") | .queue_id')
-          [ -n "$queue_id" ] || { echo "::error::Queue sb-classify not found."; exit 1; }
           for offset in $(seq 0 100 $((total - 1))); do
             jq -c --argjson o "$offset" '{messages: .[$o:$o + 100]}' jobs.json \
-              | curl -fsS -X POST -H "$auth" -H "Content-Type: application/json" --data @- "$api/$queue_id/messages/batch" > /dev/null
+              | curl -fsS -X POST -H "$auth" -H "Content-Type: application/json" --data @- "$queue/messages/batch" > /dev/null
           done
           echo "Re-queued $total posts for classification. At one post at a time this takes roughly $((total * 4 / 60)) minutes; the AI Gateway's daily cap may spread it over more than one day." | tee -a "$GITHUB_STEP_SUMMARY"

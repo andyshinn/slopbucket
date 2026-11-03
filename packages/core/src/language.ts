@@ -32,6 +32,15 @@ export const LANGUAGES = {
 export type Language = keyof typeof LANGUAGES;
 export const LANGUAGE_CODES = Object.keys(LANGUAGES) as Language[];
 
+export const isLanguage = (code: unknown): code is Language => typeof code === "string" && Object.hasOwn(LANGUAGES, code);
+
+/**
+ * The name of a post's language when the queue should flag it: null for English,
+ * undetermined, not detected yet, or a code the detector doesn't produce.
+ */
+export const foreignLanguageName = (code: string | null): string | null =>
+  isLanguage(code) && code !== "en" && code !== "und" ? LANGUAGES[code] : null;
+
 // Common words, lowercase. Overlaps between languages are fine: the words only
 // one language uses decide between them.
 const STOPWORDS: Partial<Record<Language, readonly string[]>> = {
@@ -87,7 +96,9 @@ export function detectLanguage(text: string): Language {
 
   const scripts: [Language, number, number][] = [
     // [language, weighted size, raw characters]
-    [kana >= (han + kana) * 0.1 ? "ja" : "zh", (han + kana) * 4, han + kana],
+    // Japanese mixes kanji (Han) with kana; Chinese has no kana, so a couple of kana
+    // mean Japanese even in a kanji-heavy title. Kanji alone can't be told from Chinese.
+    [kana >= 2 ? "ja" : "zh", (han + kana) * 4, han + kana],
     ["ko", hangul * 4, hangul],
     ["th", thai * 4, thai],
     [count(t, /[іїєґІЇЄҐ]/gu) >= cyrillic * 0.02 ? "uk" : "ru", cyrillic, cyrillic],

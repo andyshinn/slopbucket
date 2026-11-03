@@ -6,6 +6,14 @@ import { getArticleText } from "./content.ts";
 import type { Deps } from "./deps.ts";
 import { fetchRepoStats, upsertRepoSnapshot } from "./http.ts";
 
+/**
+ * The classification columns every routing write sets. A null language keeps the
+ * stored one (a retry from a stored classification, or a duplicate URL whose twin
+ * had none); the languages job fills those later.
+ */
+const CLASSIFIED_COLS = "classification = ?, confidence = ?, post_type = ?, version = ?, language = coalesce(?, language)";
+const classifiedValues = (c: Classification, language: string | null) => [JSON.stringify(c), c.confidence, c.post_type, c.version, language] as const;
+
 interface PostRow {
   id: number;
   source: string;
@@ -76,7 +84,7 @@ export async function runClassifyJob(job: ClassifyJob, deps: Deps): Promise<void
     const result = await classifyPost({ model, categories, categoryInfo, tags, post, text, fewShot, reasoningEffort: reasoningEffort || undefined }, deps.ai);
     if (!result.ok) {
       await db
-        .prepare("UPDATE posts SET status = 'queued', raw_output = ?, language = ? WHERE id = ?")
+        .prepare("UPDATE posts SET status = 'queued', raw_output = ?, language = coalesce(?, language) WHERE id = ?")
         .bind(JSON.stringify({ raw: result.raw, error: result.error }), language, post.id)
         .run();
       console.warn(JSON.stringify({ event: "classify_invalid", post_id: post.id, error: result.error }));
@@ -85,8 +93,8 @@ export async function runClassifyJob(job: ClassifyJob, deps: Deps): Promise<void
     classification = { ...result.value, model, classifier };
     via = "model";
     await db
-      .prepare("UPDATE posts SET classification = ?, confidence = ?, post_type = ?, version = ?, language = ? WHERE id = ?")
-      .bind(JSON.stringify(classification), classification.confidence, classification.post_type, classification.version, language, post.id)
+      .prepare(`UPDATE posts SET ${CLASSIFIED_COLS} WHERE id = ?`)
+      .bind(...classifiedValues(classification, language), post.id)
       .run();
   }
 
@@ -97,7 +105,7 @@ export async function runClassifyJob(job: ClassifyJob, deps: Deps): Promise<void
 /** Routing rules from docs/DESIGN.md "Routing after classification". */
 async function route(deps: Deps, post: PostRow, c: Classification, threshold: number, minStars: number, language: string | null) {
   const { db } = deps;
-  const fields = [JSON.stringify(c), c.confidence, c.post_type, c.version, language] as const;
+  const fields = classifiedValues(c, language);
 
   // A "tool" the model cannot name (and has no repo for) is an article about AI
   // tools in general, not a post about one specific tool.
@@ -105,10 +113,7 @@ async function route(deps: Deps, post: PostRow, c: Classification, threshold: nu
   if (!c.is_ai_dev_tool || c.post_type === "roundup" || unnamed) {
     const reason = !c.is_ai_dev_tool ? "not_ai_dev_tool" : c.post_type === "roundup" ? "roundup" : "no_tool_named";
     await db
-      .prepare(
-        `UPDATE posts SET classification = ?, confidence = ?, post_type = ?, version = ?, language = coalesce(?, language),
-           status = 'dropped', drop_reason = ? WHERE id = ?`,
-      )
+      .prepare(`UPDATE posts SET ${CLASSIFIED_COLS}, status = 'dropped', drop_reason = ? WHERE id = ?`)
       .bind(...fields, reason, post.id)
       .run();
     return { status: "dropped", reason };
@@ -122,10 +127,7 @@ async function route(deps: Deps, post: PostRow, c: Classification, threshold: nu
   const status = publish ? "published" : "queued";
   await db.batch([
     db
-      .prepare(
-          `UPDATE posts SET classification = ?, confidence = ?, post_type = ?, version = ?, language = coalesce(?, language),
-             status = ?, tool_id = ? WHERE id = ?`,
-        )
+      .prepare(`UPDATE posts SET ${CLASSIFIED_COLS}, status = ?, tool_id = ? WHERE id = ?`)
       .bind(...fields, status, toolId, post.id),
     db
       .prepare(

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectLanguage, postLanguage } from "../src/index.ts";
+import { detectLanguage, foreignLanguageName, postLanguage } from "../src/index.ts";
 
 describe("detectLanguage", () => {
   it.each([
@@ -16,6 +16,22 @@ describe("detectLanguage", () => {
     ["ar", "أداة برمجة تعمل في الطرفية وتقرأ المستودع وتقترح التغييرات"],
   ])("detects %s", (lang, text) => {
     expect(detectLanguage(text)).toBe(lang);
+  });
+
+  // Short titles, where the shared words (de, la, en, un) matter most.
+  it.each([
+    ["en", "Show HN: An agent that writes the tests for you"],
+    ["es", "Un agente que escribe las pruebas por ti"],
+    ["pt", "Um agente que escreve os testes para você"],
+    ["fr", "Un agent qui écrit les tests pour vous"],
+    ["de", "Ein Agent, der die Tests für dich schreibt"],
+    ["it", "Un agente che scrive i test per te"],
+    ["nl", "Een agent die de tests voor je schrijft"],
+    ["ja", "Claude Code 入門ガイド"],
+    ["ja", "生成AI開発環境構築の手引き"],
+    ["zh", "基于大模型的代码审查工具"],
+  ])("detects %s in a short title: %s", (lang, title) => {
+    expect(detectLanguage(title)).toBe(lang);
   });
 
   it("ignores code blocks, inline code and URLs", () => {
@@ -48,5 +64,16 @@ describe("postLanguage", () => {
   it("reads the title and the extracted text together", () => {
     expect(postLanguage("acme/agentkit", "一个在终端里运行的编码代理，可以读取仓库并提出修改建议。")).toBe("zh");
     expect(postLanguage("Show HN: Patchwork – an agent for the terminal", null)).toBe("en");
+  });
+});
+
+describe("foreignLanguageName", () => {
+  it("names only languages worth flagging", () => {
+    expect(foreignLanguageName("zh")).toBe("Chinese");
+    expect(foreignLanguageName("en")).toBeNull();
+    expect(foreignLanguageName("und")).toBeNull();
+    expect(foreignLanguageName(null)).toBeNull();
+    expect(foreignLanguageName("xx")).toBeNull();
+    expect(foreignLanguageName("toString")).toBeNull();
   });
 });

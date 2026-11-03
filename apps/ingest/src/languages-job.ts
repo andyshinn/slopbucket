@@ -29,6 +29,10 @@ export async function runLanguagesJob(_job: LanguagesJob, deps: Deps): Promise<n
     });
   }
   if (updates.length) await db.batch(updates);
+  // Sent after the batch commits. If sending fails, the queue retries this message,
+  // which picks up the next 200; if its retries run out, the chain stops until the
+  // daily cron starts it again. Two jobs running at once (cron and Status) may read
+  // the same rows; the writes are idempotent.
   const more = results.length === LANGUAGE_BATCH;
   if (more) await deps.fetchQueue.send({ kind: "languages" } satisfies LanguagesJob);
   console.log(JSON.stringify({ event: "languages", detected: results.length, more }));

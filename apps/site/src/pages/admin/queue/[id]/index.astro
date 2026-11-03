@@ -1,5 +1,5 @@
 ---
-import { LANGUAGES, getSetting } from "@slop-bucket/core";
+import { foreignLanguageName, getSetting } from "@slop-bucket/core";
 import { env } from "cloudflare:workers";
 import Icon from "../../../../components/Icon.astro";
 import Notice from "../../../../components/Notice.astro";
@@ -48,9 +48,7 @@ const [{ total, matching }, list, text, tagGroups, minStars, languages] = await 
   getSetting(env.DB, "github_min_stars"),
   queueLanguages(env.DB),
 ]);
-// Named only when it isn't English (the usual case) and was detected.
-const languageName = (code: string | null) => (code && code !== "en" && code !== "und" ? (LANGUAGES[code as keyof typeof LANGUAGES] ?? code) : null);
-const postLanguage = languageName(post.language);
+const postLanguage = foreignLanguageName(post.language);
 const tags = tagChips(c?.tags, tagGroups);
 const struck = tags.some((t) => !t.known);
 const queued = post.status === "queued";
@@ -93,6 +91,7 @@ try {
         {list.map((q) => {
           const current = q.id === id;
           const chip = confidenceChip(q.confidence);
+          const language = foreignLanguageName(q.language);
           return (
             <li>
               <a
@@ -106,8 +105,8 @@ try {
                     {SOURCE_ABBRS[q.source] ?? q.source}
                   </abbr>
                   <span class="min-w-0 flex-1 truncate">{q.tool_name ?? "No tool"}{q.new_tool ? " · new" : ""}</span>
-                  {languageName(q.language) && (
-                    <abbr title={languageName(q.language)!} class="shrink-0 rounded bg-sky-100 px-1 font-mono text-[10px] font-bold text-sky-900 uppercase no-underline">
+                  {language && (
+                    <abbr title={language} class="shrink-0 rounded bg-sky-100 px-1 font-mono text-[10px] font-bold text-sky-900 uppercase no-underline">
                       {q.language}
                     </abbr>
                   )}
