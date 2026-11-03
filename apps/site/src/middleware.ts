@@ -30,7 +30,8 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
   context.locals.adminEmail = result.email;
   const response = await next();
-  response.headers.set("cache-control", "no-store");
+  // Admin pages are never cached; a route may opt into the browser's private cache (the image proxy).
+  if (!response.headers.get("cache-control")?.startsWith("private")) response.headers.set("cache-control", "no-store");
   response.headers.set("x-robots-tag", "noindex, nofollow");
   return response;
 });

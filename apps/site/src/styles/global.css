@@ -31,3 +31,32 @@
 .dark .highlight {
   background: linear-gradient(transparent 58%, color-mix(in oklab, var(--color-lime-400) 40%, transparent) 58% 92%, transparent 92%);
 }
+
+/* Rendered markdown from untrusted text (lib/markdown.ts), e.g. a README in the review queue.
+   Compact, since it sits in a narrow scroll box. */
+.markdown > :first-child { margin-top: 0; }
+.markdown > :last-child { margin-bottom: 0; }
+.markdown :is(p, ul, ol, pre, blockquote, table, hr) { margin-block: 0.75em; }
+.markdown :is(h1, h2, h3, h4, h5, h6) { margin-block: 1.25em 0.5em; font-weight: 600; line-height: 1.3; color: var(--color-stone-900); }
+.markdown h1 { font-size: 1.25em; }
+.markdown h2 { font-size: 1.125em; }
+.markdown h3 { font-size: 1em; }
+.markdown :is(h4, h5, h6) { font-size: 0.875em; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-stone-600); }
+.markdown ul { list-style: disc; padding-left: 1.25em; }
+.markdown ol { list-style: decimal; padding-left: 1.25em; }
+.markdown li + li { margin-top: 0.25em; }
+.markdown a { color: var(--color-lime-700); text-decoration: underline; text-underline-offset: 2px; }
+.markdown blockquote { border-left: 3px solid var(--color-stone-300); padding-left: 0.75em; color: var(--color-stone-600); }
+.markdown code { font-family: var(--font-mono); font-size: 0.875em; background: var(--color-stone-200); border-radius: 0.25rem; padding: 0.1em 0.3em; }
+.markdown pre { overflow-x: auto; border-radius: 0.5rem; background: var(--color-stone-900); color: var(--color-stone-100); padding: 0.75em; font-size: 0.75rem; }
+.markdown pre code { background: none; padding: 0; font-size: inherit; }
+.markdown table { display: block; overflow-x: auto; border-collapse: collapse; font-size: 0.875em; }
+.markdown :is(th, td) { border: 1px solid var(--color-stone-200); padding: 0.25em 0.5em; text-align: left; vertical-align: top; }
+.markdown th { background: var(--color-stone-100); font-weight: 600; }
+.markdown hr { border-color: var(--color-stone-200); }
+.markdown img { display: inline; max-width: 100%; height: auto; vertical-align: middle; }
+.markdown summary { cursor: pointer; font-weight: 500; }
+.markdown kbd { font-family: var(--font-mono); font-size: 0.8em; border: 1px solid var(--color-stone-300); border-radius: 0.25rem; padding: 0 0.3em; }
+.markdown .contains-task-list { list-style: none; padding-left: 0; }
+.markdown input[type="checkbox"] { margin-right: 0.4em; vertical-align: middle; }
+.markdown .markdown-cut { margin-top: 1em; font-style: italic; color: var(--color-stone-500); }
