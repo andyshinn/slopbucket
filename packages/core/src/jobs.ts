@@ -32,3 +32,12 @@ export const classifyJobSchema = z.object({
   force: z.boolean().optional(),
 });
 export type ClassifyJob = z.infer<typeof classifyJobSchema>;
+
+// Also on the fetch queue: fills posts.language for queued and published posts
+// that don't have one yet, from the title and the text cached in R2 (no model
+// calls, nothing re-fetched). It works in batches and re-enqueues itself until
+// none are left. The daily cron sends one; Status → Jobs and ops.yml can too.
+export const languagesJobSchema = z.object({
+  kind: z.literal("languages"),
+});
+export type LanguagesJob = z.infer<typeof languagesJobSchema>;

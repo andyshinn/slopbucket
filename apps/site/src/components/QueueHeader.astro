@@ -4,7 +4,10 @@
 // filters inline; on phones the same form folds into a <details> whose summary
 // names the active filters. One form for both, forced open on desktop through
 // ::details-content.
-import { BAND_KEYS, CONFIDENCE_BANDS, ORDER_KEYS, QUEUE_ORDERS, QUEUE_SOURCES, STAR_FILTER_KEYS, type QueueFilters, starFilterLabels } from "../lib/review.ts";
+import { LANGUAGES, LANGUAGE_CODES } from "@slop-bucket/core";
+import {
+  BAND_KEYS, CONFIDENCE_BANDS, NON_ENGLISH, ORDER_KEYS, QUEUE_ORDERS, QUEUE_SOURCES, STAR_FILTER_KEYS, type QueueFilters, languageFilterCount, languageFilterLabel, starFilterLabels,
+} from "../lib/review.ts";
 import { SOURCE_LABELS, btnSecondary, num } from "../lib/ui.ts";
 
 interface Props {
@@ -15,12 +18,18 @@ interface Props {
   total: number;
   /** github_min_stars, for the star filter's labels. */
   minStars: number;
+  /** Queued posts per detected language (queueLanguages). */
+  languages: Map<string, number>;
 }
-const { filters, matching, total, minStars } = Astro.props;
+const { filters, matching, total, minStars, languages } = Astro.props;
 const starLabels = starFilterLabels(minStars);
-const filtered = filters.source !== "" || filters.band !== "" || filters.stars !== "";
+// English (which includes Unknown) and Non-English always; then each other language the queue
+// holds, in LANGUAGES order (Unknown last), plus the chosen one.
+const byLanguage = LANGUAGE_CODES.filter((l) => l !== "en" && ((languages.get(l) ?? 0) > 0 || filters.language === l));
+const filtered = filters.source !== "" || filters.band !== "" || filters.stars !== "" || filters.language !== "";
 const active = [
   filters.source && SOURCE_LABELS[filters.source],
+  filters.language && languageFilterLabel(filters.language),
   filters.band && CONFIDENCE_BANDS[filters.band],
   filters.stars && starLabels[filters.stars],
   filters.order !== "oldest" && QUEUE_ORDERS[filters.order],
@@ -44,6 +53,20 @@ const fieldLabel = "text-sm font-medium text-stone-900 lg:sr-only";
         <select id="qf-source" name="source" class={select}>
           <option value="">All sources</option>
           {QUEUE_SOURCES.map((s) => <option value={s} selected={filters.source === s}>{SOURCE_LABELS[s]}</option>)}
+        </select>
+      </div>
+      <div class="grid gap-1 lg:block">
+        <label for="qf-language" class={fieldLabel}>Language</label>
+        <select id="qf-language" name="language" class={select}>
+          <option value="">Any language</option>
+          {(["en", NON_ENGLISH] as const).map((l) => (
+            <option value={l} selected={filters.language === l}>{languageFilterLabel(l)} ({num(languageFilterCount(l, languages))})</option>
+          ))}
+          {byLanguage.length > 0 && (
+            <optgroup label="One language">
+              {byLanguage.map((l) => <option value={l} selected={filters.language === l}>{LANGUAGES[l]} ({num(languageFilterCount(l, languages))})</option>)}
+            </optgroup>
+          )}
         </select>
       </div>
       <div class="grid gap-1 lg:block">

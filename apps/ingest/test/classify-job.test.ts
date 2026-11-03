@@ -206,6 +206,20 @@ describe("runClassifyJob", () => {
     expect(JSON.parse(p!.raw_output as string).error).toContain("category");
   });
 
+  it("stores the post's language, detected from the title and text without the model", async () => {
+    const id = await insertPost();
+    await runClassifyJob({ kind: "classify", post_id: id }, makeDeps({ ai: fakeAi(tool()) }));
+    const zh = await insertPost({ title: "acme/zhinengti" });
+    await env.ARTICLES.put(articleKey(zh), "一个在终端里运行的编码代理，可以读取仓库并提出修改建议。");
+    await runClassifyJob({ kind: "classify", post_id: zh }, makeDeps({ ai: fakeAi(tool({ tool_name: "Zhinengti", github_repo: null, homepage_url: null })) }));
+    const invalid = await insertPost();
+    await runClassifyJob({ kind: "classify", post_id: invalid }, makeDeps({ ai: fakeAi("no", "no") }));
+    const language = (pid: number) => env.DB.prepare("SELECT language FROM posts WHERE id = ?").bind(pid).first<{ language: string }>().then((r) => r?.language);
+    expect(await language(id)).toBe("en");
+    expect(await language(zh)).toBe("zh");
+    expect(await language(invalid)).toBe("en");
+  });
+
   it("succeeds on the retry when the first response is invalid", async () => {
     const id = await insertPost();
     const ai = fakeAi("{", tool());
@@ -271,6 +285,9 @@ describe("runClassifyJob", () => {
     const second = await insertPost({ url });
     await runClassifyJob({ kind: "classify", post_id: second }, makeDeps()); // makeDeps' default AI throws
     expect((await post(second))!.tool_id).toBe((await post(first))!.tool_id);
+    // The language comes along with the classification.
+    const { results } = await env.DB.prepare("SELECT language FROM posts ORDER BY id").all();
+    expect(results).toEqual([{ language: "en" }, { language: "en" }]);
   });
 
   it("does not reuse a same-URL result from a different model (e.g. after a model change)", async () => {
