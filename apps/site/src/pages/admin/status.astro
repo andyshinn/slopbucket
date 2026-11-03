@@ -30,11 +30,13 @@ import {
   postCounts,
   reclassifyPreview,
   reclassifyQueued,
+  runLanguages,
   runNow,
   runTrending,
   sourceStatuses,
   startBackfill,
   trendingStatus,
+  undetectedLanguages,
 } from "../../lib/ops.ts";
 import { SOURCE_LABELS, aboutDuration, btnPrimary, btnSecondary, card, input, label, num, shortDuration, timeAgo } from "../../lib/ui.ts";
 
@@ -64,6 +66,11 @@ if (Astro.request.method === "POST") {
     if (action === "trending") {
       await runTrending(env.FETCH_QUEUE);
       return Astro.redirect("/admin/status?done=trending", 303);
+    }
+    // Free (no model calls, nothing fetched), so it runs without a confirmation screen.
+    if (action === "languages") {
+      await runLanguages(env.FETCH_QUEUE);
+      return Astro.redirect("/admin/status?done=languages", 303);
     }
     if (action === "backfill") {
       const source = String(form.get("source"));
@@ -119,6 +126,8 @@ const doneMessage =
     ? `Started ${doneCount} fetch ${doneCount === 1 ? "job" : "jobs"}. New posts appear in the queue after classification.`
     : done === "trending"
       ? "Trending update started. Scores refresh in a minute or two."
+      : done === "languages"
+      ? "Language detection started. It works through the posts in batches of 200, a few seconds each."
       : done === "backfill"
       ? `Backfill started (${doneCount} ${doneCount === 1 ? "source" : "sources"}). It runs over the next hours or days, within the AI spend cap.`
       : done === "reclassify"
@@ -130,7 +139,7 @@ const doneMessage =
             : null;
 
 async function loadMain(db: D1Database) {
-  const [statuses, counts, progress, ops, trending, model, unreviewed, confident, lowStars] = await Promise.all([
+  const [statuses, counts, progress, ops, trending, model, unreviewed, confident, lowStars, noLanguage] = await Promise.all([
     sourceStatuses(db),
     postCounts(db),
     classifyProgress(db),
@@ -140,8 +149,9 @@ async function loadMain(db: D1Database) {
     reclassifyPreview(db),
     publishConfidentPreview(db),
     queueLowStarPreview(db),
+    undetectedLanguages(db),
   ]);
-  return { statuses, counts, progress, ops, trending, model, unreviewed, confident, lowStars };
+  return { statuses, counts, progress, ops, trending, model, unreviewed, confident, lowStars, noLanguage };
 }
 // The main page's data, or null on the confirmation and backfill form screens.
 const main = !confirm && !backfillForm ? await loadMain(env.DB) : null;
@@ -529,9 +539,21 @@ const jobRow =
                 <Icon name="chevronRight" class="size-5 shrink-0 text-stone-400" />
               </button>
             </form>
+            <form method="post">
+              <input type="hidden" name="action" value="languages" />
+              <button type="submit" class={jobRow}>
+                <span class="min-w-0 flex-1">
+                  <span class="block font-semibold">Detect languages</span>
+                  <span class="block text-sm text-stone-500">
+                    {main.noLanguage === 0 ? "Every post has one" : `${plural(main.noLanguage, "post")} without one, from cached text, no model calls`}
+                  </span>
+                </span>
+                <Icon name="play" class="size-5 shrink-0 text-stone-400" />
+              </button>
+            </form>
           </div>
           <p class="text-sm text-stone-500">
-            Each job asks you to confirm on the next screen. Re-classify after changing the model, prompt, categories or tags (it calls the model). After lowering the review threshold, Publish confident posts applies it to the queue from stored confidence. After raising GitHub minimum stars, Send low-star tools to review applies it to tools already public. Migrations, secrets and deploys stay in GitHub Actions.
+            Each job but Detect languages asks you to confirm on the next screen. Re-classify after changing the model, prompt, categories or tags (it calls the model). After lowering the review threshold, Publish confident posts applies it to the queue from stored confidence. After raising GitHub minimum stars, Send low-star tools to review applies it to tools already public. Detect languages fills the queue's language filter for posts classified before it existed (new posts get theirs when classified, and the daily run catches any left). Migrations, secrets and deploys stay in GitHub Actions.
           </p>
         </section>
       </div>

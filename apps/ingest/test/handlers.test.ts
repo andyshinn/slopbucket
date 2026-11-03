@@ -14,7 +14,7 @@ import { fakeQueue, resetDb } from "./helpers.ts";
 
 beforeEach(resetDb);
 
-it("enqueues one daily fetch job per source and re-queues stale pending posts", async () => {
+it("enqueues one daily fetch job per source, a languages job, and re-queues stale pending posts", async () => {
   const insert = (id: string, createdAt: string) =>
     env.DB.prepare(
       "INSERT INTO posts (source, external_id, url, canonical_url, title, posted_at, created_at) VALUES ('hn', ?, 'https://x.dev', 'https://x.dev', 't', ?, ?) RETURNING id",
@@ -38,6 +38,7 @@ it("enqueues one daily fetch job per source and re-queues stale pending posts", 
     { kind: "fetch", source: "hn", mode: "daily", until: "2026-10-06T06:00:00.000Z" },
     { kind: "fetch", source: "lobsters", mode: "daily", until: "2026-10-06T06:00:00.000Z" },
     { kind: "fetch", source: "github", mode: "daily", until: "2026-10-06T06:00:00.000Z" },
+    { kind: "languages" },
   ]);
   expect(classifyQ.sent).toEqual([{ kind: "classify", post_id: stale!.id }]);
 });
@@ -64,6 +65,18 @@ it("runs trending jobs from the fetch queue", async () => {
   expect(result.explicitAcks).toEqual(["t"]);
   const run = await env.DB.prepare("SELECT source, mode FROM source_runs").first();
   expect(run).toEqual({ source: "trending", mode: "manual" });
+});
+
+it("runs languages jobs from the fetch queue", async () => {
+  await env.DB.prepare(
+    "INSERT INTO posts (source, external_id, url, canonical_url, title, posted_at, status) VALUES ('hn', 'l', 'https://x.dev', 'https://x.dev', 'Show HN: an agent for the terminal', '2026-10-01T00:00:00.000Z', 'queued')",
+  ).run();
+  const batch = createMessageBatch("sb-fetch", [{ id: "l", timestamp: new Date(), attempts: 1, body: { kind: "languages" } }]);
+  const ctx = createExecutionContext();
+  await worker.queue(batch, env, ctx);
+  const result = await getQueueResult(batch, ctx);
+  expect(result.explicitAcks).toEqual(["l"]);
+  expect(await env.DB.prepare("SELECT language FROM posts").first()).toEqual({ language: "en" });
 });
 
 it("sends every Workers AI call through the AI Gateway", async () => {

@@ -1,5 +1,5 @@
 import {
-  type Classification, type TagGroups, classificationSchema, getSetting, latestStarsSql, lowStarToolSql, resolveTool, tagSlugs,
+  type Classification, type Language, type TagGroups, LANGUAGE_CODES, classificationSchema, getSetting, latestStarsSql, lowStarToolSql, resolveTool, tagSlugs,
 } from "@slop-bucket/core";
 
 export interface QueuePost {
@@ -14,6 +14,8 @@ export interface QueuePost {
   tool_id: number | null;
   classification: string | null;
   raw_output: string | null;
+  /** Detected spoken language (packages/core language.ts); null until detected. */
+  language: string | null;
 }
 
 export interface ToolSummary {
@@ -62,10 +64,12 @@ export interface QueueFilters {
   band: ConfidenceBand | "";
   /** "" for any stars; hide or only show posts whose tool's repo is under the star floor. */
   stars: StarFilter | "";
+  /** "" for any language; `und` also matches posts not detected yet. */
+  language: Language | "";
   order: QueueOrder;
 }
 
-const DEFAULT_QUEUE_FILTERS: QueueFilters = { source: "", band: "", stars: "", order: "oldest" };
+const DEFAULT_QUEUE_FILTERS: QueueFilters = { source: "", band: "", stars: "", language: "", order: "oldest" };
 
 const oneOf = <T extends string>(value: string | null, allowed: readonly T[]): T | undefined =>
   allowed.find((a) => a === value);
@@ -76,6 +80,7 @@ export function parseQueueFilters(params: URLSearchParams): QueueFilters {
     source: oneOf(params.get("source"), QUEUE_SOURCES) ?? DEFAULT_QUEUE_FILTERS.source,
     band: oneOf(params.get("band"), BAND_KEYS) ?? DEFAULT_QUEUE_FILTERS.band,
     stars: oneOf(params.get("stars"), STAR_FILTER_KEYS) ?? DEFAULT_QUEUE_FILTERS.stars,
+    language: oneOf(params.get("language"), LANGUAGE_CODES) ?? DEFAULT_QUEUE_FILTERS.language,
     order: oneOf(params.get("order"), ORDER_KEYS) ?? DEFAULT_QUEUE_FILTERS.order,
   };
 }
@@ -86,6 +91,7 @@ export function queueFilterQuery(f: QueueFilters): string {
   if (f.source !== DEFAULT_QUEUE_FILTERS.source) q.set("source", f.source);
   if (f.band !== DEFAULT_QUEUE_FILTERS.band) q.set("band", f.band);
   if (f.stars !== DEFAULT_QUEUE_FILTERS.stars) q.set("stars", f.stars);
+  if (f.language !== DEFAULT_QUEUE_FILTERS.language) q.set("language", f.language);
   if (f.order !== DEFAULT_QUEUE_FILTERS.order) q.set("order", f.order);
   return q.toString();
 }
@@ -121,6 +127,10 @@ function filterSql(f: QueueFilters): { sql: string; binds: unknown[] } {
   }
   if (f.band) parts.push(BAND_SQL[f.band]);
   if (f.stars) parts.push(`${f.stars === "hide" ? "NOT " : ""}${LOW_STAR_POST}`);
+  if (f.language) {
+    parts.push("coalesce(p.language, 'und') = ?");
+    binds.push(f.language);
+  }
   return { sql: parts.length ? parts.join(" AND ") : "1", binds };
 }
 
@@ -142,6 +152,14 @@ export async function queueCounts(db: D1Database, f: QueueFilters = DEFAULT_QUEU
     .bind(...binds)
     .first<{ total: number; matching: number }>();
   return { total: row?.total ?? 0, matching: row?.matching ?? 0 };
+}
+
+/** Queued posts per detected language (`und` includes posts not detected yet), for the language filter. */
+export async function queueLanguages(db: D1Database): Promise<Map<string, number>> {
+  const { results } = await db
+    .prepare("SELECT coalesce(language, 'und') AS language, count(*) AS n FROM posts WHERE status = 'queued' GROUP BY 1")
+    .all<{ language: string; n: number }>();
+  return new Map(results.map((r) => [r.language, r.n]));
 }
 
 /**
@@ -180,6 +198,7 @@ export interface QueueListItem {
   /** As on ToolSummary: null without a tool, repo or snapshot. */
   stars: number | null;
   low_stars: 0 | 1;
+  language: string | null;
 }
 
 export const QUEUE_LIST_SIZE = 50;
@@ -191,7 +210,7 @@ export async function listQueue(db: D1Database, f: QueueFilters, limit = QUEUE_L
     .prepare(
       `SELECT p.id, p.source, p.title, p.posted_at, p.confidence, t.name AS tool_name,
          coalesce(t.status = 'queued' AND (SELECT count(*) FROM posts p2 WHERE p2.tool_id = t.id) <= 1, 0) AS new_tool,
-         ${latestStarsSql("t")} AS stars, coalesce(${lowStarToolSql("t")}, 0) AS low_stars
+         ${latestStarsSql("t")} AS stars, coalesce(${lowStarToolSql("t")}, 0) AS low_stars, p.language
        FROM posts p LEFT JOIN tools t ON t.id = p.tool_id
        WHERE ${where} ${orderBy(f)} LIMIT ?`,
     )
@@ -203,7 +222,7 @@ export async function listQueue(db: D1Database, f: QueueFilters, limit = QUEUE_L
 export async function getQueueItem(db: D1Database, id: number): Promise<QueueItem | null> {
   const post = await db
     .prepare(
-      `SELECT id, source, url, title, author, posted_at, status, confidence, tool_id, classification, raw_output
+      `SELECT id, source, url, title, author, posted_at, status, confidence, tool_id, classification, raw_output, language
        FROM posts WHERE id = ?`,
     )
     .bind(id)

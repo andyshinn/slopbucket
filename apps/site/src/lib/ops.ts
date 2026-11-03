@@ -4,6 +4,7 @@ import {
   type FetchJob,
   RESET_PREVIEW_SQL,
   type Source,
+  type LanguagesJob,
   type TrendingJob,
   backfillRunCount,
   fetchJobs,
@@ -118,6 +119,20 @@ export async function trendingStatus(db: D1Database): Promise<SourceRun | null> 
 /** "Run now" for the trending update. */
 export async function runTrending(fetchQueue: Queue): Promise<void> {
   const job: TrendingJob = { kind: "trending", mode: "manual" };
+  await fetchQueue.send(job);
+}
+
+/** Queued and published posts with no detected language yet: what the languages job would fill. */
+export async function undetectedLanguages(db: D1Database): Promise<number> {
+  const row = await db
+    .prepare("SELECT count(*) AS n FROM posts WHERE language IS NULL AND status IN ('queued', 'published')")
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+}
+
+/** Starts the languages job (it re-enqueues itself until every post has a language). No model calls. */
+export async function runLanguages(fetchQueue: Queue): Promise<void> {
+  const job: LanguagesJob = { kind: "languages" };
   await fetchQueue.send(job);
 }
 

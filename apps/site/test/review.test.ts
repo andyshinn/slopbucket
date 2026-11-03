@@ -12,6 +12,7 @@ import {
   parseQueueFilters,
   queueCounts,
   queueFilterQuery,
+  queueLanguages,
   reassignPost,
   rejectPost,
   searchTools,
@@ -92,8 +93,9 @@ describe("queue filters", () => {
   }
 
   it("parses the URL, drops unknown values and writes back only non-defaults", () => {
-    expect(filters("source=github&band=mid&stars=hide&order=lowest")).toEqual({ source: "github", band: "mid", stars: "hide", order: "lowest" });
-    expect(filters("source=reddit&band=x&stars=lots&order=random")).toEqual({ source: "", band: "", stars: "", order: "oldest" });
+    expect(filters("source=github&band=mid&stars=hide&language=en&order=lowest")).toEqual({ source: "github", band: "mid", stars: "hide", language: "en", order: "lowest" });
+    expect(filters("source=reddit&band=x&stars=lots&language=klingon&order=random")).toEqual({ source: "", band: "", stars: "", language: "", order: "oldest" });
+    expect(queueFilterQuery(filters("language=zh&order=newest"))).toBe("language=zh&order=newest");
     expect(queueFilterQuery(filters("stars=only"))).toBe("stars=only");
     expect(queueFilterQuery(filters("source=&band=&order=oldest"))).toBe("");
     expect(queueFilterQuery(filters("order=newest&source=hn"))).toBe("source=hn&order=newest");
@@ -113,6 +115,28 @@ describe("queue filters", () => {
     expect((await listQueue(db, filters("band=mid"))).map((q) => q.id)).toEqual([mid]);
     expect((await listQueue(db, filters("band=low"))).map((q) => q.id)).toEqual([low, none]);
     expect((await listQueue(db, filters("source=hn&band=low"))).map((q) => q.id)).toEqual([low]);
+  });
+
+  it("filters by detected language; Unknown includes posts not detected yet", async () => {
+    const t = await tool("Patchwork");
+    const lang = async (language: string | null) => {
+      const id = await post(t);
+      await db.prepare("UPDATE posts SET language = ? WHERE id = ?").bind(language, id).run();
+      return id;
+    };
+    const en = await lang("en");
+    const zh = await lang("zh");
+    const und = await lang("und");
+    const unset = await lang(null);
+    const en2 = await lang("en");
+    await db.prepare("UPDATE posts SET status = 'published' WHERE id = ?").bind(en2).run();
+    expect((await listQueue(db, filters("language=en"))).map((q) => q.id)).toEqual([en]);
+    expect((await listQueue(db, filters("language=zh"))).map((q) => [q.id, q.language])).toEqual([[zh, "zh"]]);
+    expect((await listQueue(db, filters("language=und"))).map((q) => q.id)).toEqual([und, unset]);
+    expect(await queueCounts(db, filters("language=en"))).toEqual({ total: 4, matching: 1 });
+    expect(await nextQueuedId(db, en, filters("language=und"))).toBe(und);
+    expect(Object.fromEntries(await queueLanguages(db))).toEqual({ en: 1, zh: 1, und: 2 });
+    expect((await getQueueItem(db, zh))?.post.language).toBe("zh");
   });
 
   it("orders the list and walks it in that order, wrapping around", async () => {

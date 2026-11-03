@@ -4,20 +4,20 @@ import { env } from "cloudflare:workers";
 import Icon from "../../../components/Icon.astro";
 import QueueHeader from "../../../components/QueueHeader.astro";
 import Admin from "../../../layouts/Admin.astro";
-import { nextQueuedId, parseQueueFilters, queueCounts, withFilters } from "../../../lib/review.ts";
+import { nextQueuedId, parseQueueFilters, queueCounts, queueLanguages, withFilters } from "../../../lib/review.ts";
 import { accentLink } from "../../../lib/ui.ts";
 
 // Entry point and "next item" redirect: /admin/queue?after=<id> goes to the next queued post
-// in the filters' order (source, band, order; see parseQueueFilters).
+// in the filters' order (source, language, band, stars, order; see parseQueueFilters).
 const after = Number(Astro.url.searchParams.get("after") ?? 0) || 0;
 const filters = parseQueueFilters(Astro.url.searchParams);
 const next = await nextQueuedId(env.DB, after, filters);
 if (next !== null) return Astro.redirect(withFilters(`/admin/queue/${next}`, filters), 302);
-const [{ total }, minStars] = await Promise.all([queueCounts(env.DB), getSetting(env.DB, "github_min_stars")]);
+const [{ total }, minStars, languages] = await Promise.all([queueCounts(env.DB), getSetting(env.DB, "github_min_stars"), queueLanguages(env.DB)]);
 ---
 
 <Admin title="Review queue" section="queue" full>
-  <QueueHeader filters={filters} matching={0} total={total} minStars={minStars} />
+  <QueueHeader filters={filters} matching={0} total={total} minStars={minStars} languages={languages} />
   <div class="mt-16 text-center">
     {
       total > 0 ? (

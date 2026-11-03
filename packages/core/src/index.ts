@@ -1,6 +1,7 @@
 export * from "./categories.ts";
 export * from "./classification.ts";
 export * from "./jobs.ts";
+export * from "./language.ts";
 export * from "./names.ts";
 export * from "./ops.ts";
 export * from "./posts.ts";

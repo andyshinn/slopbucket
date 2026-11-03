@@ -12,11 +12,13 @@ import {
   postCounts,
   reclassifyPreview,
   reclassifyQueued,
+  runLanguages,
   runNow,
   runTrending,
   sourceStatuses,
   startBackfill,
   trendingStatus,
+  undetectedLanguages,
 } from "../src/lib/ops.ts";
 
 const db = env.DB;
@@ -55,6 +57,22 @@ describe("run now and backfill", () => {
     expect(await db.prepare("SELECT kind, source, days, total FROM operations").all().then((r) => r.results)).toEqual([
       { kind: "backfill", source: "hn", days: 7, total: 7 },
     ]);
+  });
+
+  it("counts posts without a language and starts the languages job", async () => {
+    const insert = (id: string, status: string, language: string | null) =>
+      db
+        .prepare("INSERT INTO posts (source, external_id, url, canonical_url, title, posted_at, status, language) VALUES ('hn', ?, 'https://x.dev', 'https://x.dev', 't', '2026-10-01T00:00:00Z', ?, ?)")
+        .bind(id, status, language)
+        .run();
+    await insert("a", "queued", null);
+    await insert("b", "published", null);
+    await insert("c", "queued", "en");
+    await insert("d", "dropped", null);
+    expect(await undetectedLanguages(db)).toBe(2);
+    const sent: unknown[] = [];
+    await runLanguages({ send: async (body: unknown) => void sent.push(body) } as unknown as Queue);
+    expect(sent).toEqual([{ kind: "languages" }]);
   });
 
   it("estimates backfill size and cost", () => {

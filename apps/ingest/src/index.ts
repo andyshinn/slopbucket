@@ -1,7 +1,10 @@
-import { type FetchJob, type TrendingJob, classifyJobSchema, fetchJobSchema, trendingJobSchema } from "@slop-bucket/core";
+import {
+  type FetchJob, type LanguagesJob, type TrendingJob, classifyJobSchema, fetchJobSchema, languagesJobSchema, trendingJobSchema,
+} from "@slop-bucket/core";
 import { requeueStalePending, runClassifyJob } from "./classify-job.ts";
 import { depsFromEnv } from "./deps.ts";
 import { runFetchJob } from "./fetch-job.ts";
+import { runLanguagesJob } from "./languages-job.ts";
 import { runTrendingJob } from "./trending-job.ts";
 import { ADAPTERS } from "./sources/index.ts";
 
@@ -11,8 +14,9 @@ export const CLASSIFY_QUEUE = "sb-classify";
 export const TRENDING_CRON = "0 7 * * *";
 
 export default {
-  // Daily run: one fetch job per source that has an adapter, plus a retry of
-  // posts left pending (e.g. while the AI spend limit was blocking calls).
+  // Daily run: one fetch job per source that has an adapter, a retry of posts
+  // left pending (e.g. while the AI spend limit was blocking calls), and a
+  // languages job for any post still without a detected language.
   async scheduled(controller, env, _ctx) {
     if (controller.cron === TRENDING_CRON) {
       const job: TrendingJob = { kind: "trending", mode: "daily" };
@@ -27,7 +31,8 @@ export default {
       mode: "daily",
       until,
     }));
-    await env.FETCH_QUEUE.sendBatch(jobs.map((body) => ({ body })));
+    const languages: LanguagesJob = { kind: "languages" };
+    await env.FETCH_QUEUE.sendBatch([...jobs, languages].map((body) => ({ body })));
     const requeued = await requeueStalePending(env.DB, env.CLASSIFY_QUEUE);
     console.log(JSON.stringify({ event: "cron", sources: jobs.map((j) => j.source), requeued }));
   },
@@ -39,7 +44,9 @@ export default {
         if (batch.queue === FETCH_QUEUE) {
           const trending = trendingJobSchema.safeParse(message.body);
           const job = fetchJobSchema.safeParse(message.body);
+          const languages = languagesJobSchema.safeParse(message.body);
           if (trending.success) await runTrendingJob(trending.data, deps);
+          else if (languages.success) await runLanguagesJob(languages.data, deps);
           else if (job.success) await runFetchJob(job.data, deps);
           else console.error(JSON.stringify({ event: "bad_message", queue: batch.queue, body: message.body }));
         } else if (batch.queue === CLASSIFY_QUEUE) {

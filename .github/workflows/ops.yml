@@ -20,6 +20,7 @@ on:
           - reclassify-queued
           - publish-confident
           - queue-low-stars
+          - detect-languages
       sql:
         description: "sql: one read-only statement (SELECT / WITH / EXPLAIN)"
         type: string
@@ -138,6 +139,21 @@ jobs:
               | curl -fsS -X POST -H "$auth" -H "Content-Type: application/json" --data @- "$api/$queue_id/messages" > /dev/null
             echo "Enqueued $job" | tee -a "$GITHUB_STEP_SUMMARY"
           done
+
+      # Fills posts.language (the queue's language filter) for queued and published posts
+      # without one, from the text cached in R2. No model calls, nothing re-fetched; the
+      # job re-enqueues itself in batches of 200 until every post has a language.
+      - name: Enqueue the languages job
+        if: inputs.action == 'detect-languages'
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/queues"
+          auth="Authorization: Bearer $CLOUDFLARE_API_TOKEN"
+          queue_id=$(curl -fsS -H "$auth" "$api?per_page=100" | jq -r --arg n "$FETCH_QUEUE" '.result[] | select(.queue_name == $n) | .queue_id')
+          [ -n "$queue_id" ] || { echo "::error::Queue $FETCH_QUEUE not found. Run the Bootstrap workflow first."; exit 1; }
+          jq -nc '{body:{kind:"languages"},content_type:"json"}' \
+            | curl -fsS -X POST -H "$auth" -H "Content-Type: application/json" --data @- "$api/$queue_id/messages" > /dev/null
+          echo "Enqueued the languages job." | tee -a "$GITHUB_STEP_SUMMARY"
 
       # After lowering review_threshold: publish unreviewed queued posts already at or
       # above it, from their stored confidence. No model calls, nothing re-fetched.
