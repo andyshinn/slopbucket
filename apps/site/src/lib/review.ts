@@ -1,5 +1,5 @@
 import {
-  type Classification, type Language, type TagGroups, LANGUAGE_CODES, classificationSchema, getSetting, latestStarsSql, lowStarToolSql, resolveTool, tagSlugs,
+  type Classification, type Language, type TagGroups, LANGUAGES, LANGUAGE_CODES, classificationSchema, getSetting, latestStarsSql, lowStarToolSql, resolveTool, tagSlugs,
 } from "@slop-bucket/core";
 
 export interface QueuePost {
@@ -64,9 +64,28 @@ export interface QueueFilters {
   band: ConfidenceBand | "";
   /** "" for any stars; hide or only show posts whose tool's repo is under the star floor. */
   stars: StarFilter | "";
-  /** "" for any language; `und` also matches posts not detected yet. */
-  language: Language | "";
+  /** "" for any language; see LanguageFilter. */
+  language: LanguageFilter | "";
   order: QueueOrder;
+}
+
+/**
+ * Language filter values. `en` also matches Unknown (`und`, or not detected yet):
+ * those are mostly title-only posts, nearly always English. `non-en` is every
+ * detected language but English. Any other code matches that language alone
+ * (`und` matches Unknown alone).
+ */
+export const NON_ENGLISH = "non-en";
+export type LanguageFilter = Language | typeof NON_ENGLISH;
+export const LANGUAGE_FILTER_KEYS: readonly LanguageFilter[] = [...LANGUAGE_CODES, NON_ENGLISH];
+export const languageFilterLabel = (f: LanguageFilter): string => (f === NON_ENGLISH ? "Non-English" : LANGUAGES[f]);
+
+/** Queued posts a language filter matches, from queueLanguages' counts. */
+export function languageFilterCount(f: LanguageFilter, counts: Map<string, number>): number {
+  const englishOrUnknown = (counts.get("en") ?? 0) + (counts.get("und") ?? 0);
+  if (f === "en") return englishOrUnknown;
+  if (f === NON_ENGLISH) return [...counts.values()].reduce((a, b) => a + b, 0) - englishOrUnknown;
+  return counts.get(f) ?? 0;
 }
 
 const DEFAULT_QUEUE_FILTERS: QueueFilters = { source: "", band: "", stars: "", language: "", order: "oldest" };
@@ -80,7 +99,7 @@ export function parseQueueFilters(params: URLSearchParams): QueueFilters {
     source: oneOf(params.get("source"), QUEUE_SOURCES) ?? DEFAULT_QUEUE_FILTERS.source,
     band: oneOf(params.get("band"), BAND_KEYS) ?? DEFAULT_QUEUE_FILTERS.band,
     stars: oneOf(params.get("stars"), STAR_FILTER_KEYS) ?? DEFAULT_QUEUE_FILTERS.stars,
-    language: oneOf(params.get("language"), LANGUAGE_CODES) ?? DEFAULT_QUEUE_FILTERS.language,
+    language: oneOf(params.get("language"), LANGUAGE_FILTER_KEYS) ?? DEFAULT_QUEUE_FILTERS.language,
     order: oneOf(params.get("order"), ORDER_KEYS) ?? DEFAULT_QUEUE_FILTERS.order,
   };
 }
@@ -127,7 +146,9 @@ function filterSql(f: QueueFilters): { sql: string; binds: unknown[] } {
   }
   if (f.band) parts.push(BAND_SQL[f.band]);
   if (f.stars) parts.push(`${f.stars === "hide" ? "NOT " : ""}${LOW_STAR_POST}`);
-  if (f.language) {
+  if (f.language === "en") parts.push("coalesce(p.language, 'und') IN ('en', 'und')");
+  else if (f.language === NON_ENGLISH) parts.push("coalesce(p.language, 'und') NOT IN ('en', 'und')");
+  else if (f.language) {
     parts.push("coalesce(p.language, 'und') = ?");
     binds.push(f.language);
   }
