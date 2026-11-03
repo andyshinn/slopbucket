@@ -90,13 +90,17 @@ export function autoPublishes(threshold: number, confidence: number, category: s
 
 const setting = (key: string) => `(SELECT json_extract(value, '$') FROM settings WHERE key = '${key}')`;
 
+/** The stars in the latest repo snapshot of the tool `alias` names (NULL without one). */
+export const latestStarsSql = (alias: string) => `(SELECT ls.stars FROM repo_snapshots ls WHERE ls.tool_id = ${alias}.id ORDER BY ls.date DESC LIMIT 1)`;
+
 /**
  * A tool (`alias` names its row) whose GitHub repo is under `github_min_stars`, by its
  * latest repo snapshot; a repo with no snapshot yet counts as under. Its posts never
- * publish without review, whichever source found them.
+ * publish without review, whichever source found them. The queue's star filter and
+ * the trending job's low-star factor use the same test.
  */
-const lowStarTool = (alias: string) => `${alias}.github_repo IS NOT NULL
-    AND coalesce((SELECT ls.stars FROM repo_snapshots ls WHERE ls.tool_id = ${alias}.id ORDER BY ls.date DESC LIMIT 1), 0) < ${setting("github_min_stars")}`;
+export const lowStarToolSql = (alias: string) => `${alias}.github_repo IS NOT NULL
+    AND coalesce(${latestStarsSql(alias)}, 0) < ${setting("github_min_stars")}`;
 
 /**
  * Unreviewed queued posts that publish-confident may publish at some threshold, judged
@@ -107,7 +111,7 @@ const lowStarTool = (alias: string) => `${alias}.github_repo IS NOT NULL
  */
 export const PUBLISHABLE_QUEUED_SQL = `${UNREVIEWED_QUEUED} AND tool_id IS NOT NULL AND confidence IS NOT NULL
     AND json_extract(classification, '$.category') IN (SELECT value FROM json_each((SELECT value FROM settings WHERE key = 'categories')))
-    AND posts.tool_id NOT IN (SELECT lt.id FROM tools lt WHERE ${lowStarTool("lt")})`;
+    AND posts.tool_id NOT IN (SELECT lt.id FROM tools lt WHERE ${lowStarToolSql("lt")})`;
 
 /** Of those, the posts autoPublishes() would publish under today's settings. */
 const CONFIDENT_QUEUED = `${PUBLISHABLE_QUEUED_SQL}
@@ -155,13 +159,13 @@ export async function publishConfidentQueued(db: D1Database): Promise<{ posts: n
  * Published tools whose repo is under the star floor and that nobody approved: none of
  * their published posts has a review decision. Tools you approved stay public.
  */
-const UNAPPROVED_LOW_STAR_TOOL = `status = 'published' AND ${lowStarTool("tools")}
+const UNAPPROVED_LOW_STAR_TOOL = `status = 'published' AND ${lowStarToolSql("tools")}
     AND EXISTS (SELECT 1 FROM posts p WHERE p.tool_id = tools.id AND p.status = 'published')
     AND NOT EXISTS (SELECT 1 FROM posts p JOIN review_decisions d ON d.post_id = p.id WHERE p.tool_id = tools.id AND p.status = 'published')`;
 
 /** Published, unreviewed posts of the tools `toolsWhere` (on `t`) picks, all with a repo under the floor. */
 const unreviewedPostsOf = (toolsWhere: string) => `status = 'published' AND id NOT IN (SELECT post_id FROM review_decisions)
-    AND tool_id IN (SELECT t.id FROM tools t WHERE ${lowStarTool("t")} AND (${toolsWhere}))`;
+    AND tool_id IN (SELECT t.id FROM tools t WHERE ${lowStarToolSql("t")} AND (${toolsWhere}))`;
 
 /**
  * One-off after the star floor started applying to every source: tools that were

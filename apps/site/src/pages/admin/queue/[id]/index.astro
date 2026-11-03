@@ -10,7 +10,7 @@ import {
   ReviewError, approvePost, getQueueItem, isNewTool, listQueue, parseQueueFilters, queueCounts, readArticleText, rejectPost, tagChips, withFilters,
 } from "../../../../lib/review.ts";
 import {
-  SOURCE_ABBRS, SOURCE_LABELS, accentFill, accentLink, card, confidenceChip, githubHref, hostname, num, safeHref, timeAgo,
+  SOURCE_ABBRS, SOURCE_LABELS, accentFill, accentLink, card, confidenceChip, githubHref, hostname, num, safeHref, starsLabel, timeAgo, underFloorLabel,
 } from "../../../../lib/ui.ts";
 
 // The queue filters; they carry over to the next post, Edit and Move.
@@ -40,11 +40,12 @@ if (!item) return Astro.redirect(withFilters("/admin/queue", filters), 302);
 const { post, classification: c, tool } = item;
 // Phones get the list too though they hide it: one indexed query of at most 50 rows,
 // and telling phones apart reliably would need client hints or JavaScript.
-const [{ total, matching }, list, text, tagGroups] = await Promise.all([
+const [{ total, matching }, list, text, tagGroups, minStars] = await Promise.all([
   queueCounts(env.DB, filters),
   listQueue(env.DB, filters),
   readArticleText(env.ARTICLES, id),
   getSetting(env.DB, "tags"),
+  getSetting(env.DB, "github_min_stars"),
 ]);
 const tags = tagChips(c?.tags, tagGroups);
 const struck = tags.some((t) => !t.known);
@@ -78,7 +79,7 @@ try {
 ---
 
 <Admin title="Review queue" section="queue" full>
-  <QueueHeader filters={filters} matching={matching} total={total} />
+  <QueueHeader filters={filters} matching={matching} total={total} minStars={minStars} />
 
   <div class="lg:flex lg:items-start">
     {/* Desktop: the queued posts matching the filters, beside the post. */}
@@ -101,6 +102,12 @@ try {
                     {SOURCE_ABBRS[q.source] ?? q.source}
                   </abbr>
                   <span class="min-w-0 flex-1 truncate">{q.tool_name ?? "No tool"}{q.new_tool ? " · new" : ""}</span>
+                  {q.low_stars ? (
+                    <span class="shrink-0 font-semibold text-amber-800" title={`${starsLabel(q.stars)}. ${underFloorLabel(q.stars, minStars)}`}>
+                      <span aria-hidden="true">★ {q.stars === null ? "?" : num(q.stars)}</span>
+                      <span class="sr-only">{starsLabel(q.stars)}. {underFloorLabel(q.stars, minStars)}</span>
+                    </span>
+                  ) : null}
                   <span class="shrink-0">{timeAgo(q.posted_at)}</span>
                   <span class={`shrink-0 rounded px-1.5 font-mono font-bold ${chip.class}`}>{chip.text}</span>
                 </span>
@@ -161,6 +168,19 @@ try {
                     <span class="text-stone-500">
                       · {tool.posts} {tool.posts === 1 ? "post" : "posts"} · {tool.status}
                     </span>
+                  </p>
+                )
+              }
+              {
+                tool?.github_repo && (
+                  <p class="mt-2 flex flex-wrap items-center gap-2">
+                    <span class={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold ${tool.low_stars ? "bg-amber-100 text-amber-900" : "bg-stone-200 text-stone-700"}`}>
+                      <Icon name="star" class="size-3.5" />
+                      {starsLabel(tool.stars)}
+                    </span>
+                    {tool.low_stars ? (
+                      <span class="text-stone-600">{underFloorLabel(tool.stars, minStars)}</span>
+                    ) : null}
                   </p>
                 )
               }

@@ -37,7 +37,7 @@ const [values, scores] = await Promise.all([loadSettings(env.DB), queuedScores(e
 // Validated, not cast: a bad stored value hides the histogram but leaves the page usable to fix it.
 const threshold = settingSchemas.review_threshold.safeParse(values.review_threshold);
 const histogram = threshold.success ? thresholdHistogram(scores, threshold.data) : null;
-const WEIGHT_LABELS: Record<string, string> = { w_s: "Sources", w_e: "Engagement", w_g: "Star growth", g: "Gravity" };
+const WEIGHT_LABELS: Record<string, string> = { w_s: "Sources", w_e: "Engagement", w_g: "Star growth", g: "Gravity", low_star: "Under star floor ×" };
 
 // Value shown in a field: what was just submitted if it failed, else what is stored.
 function shown(key: string, name = "value"): string {

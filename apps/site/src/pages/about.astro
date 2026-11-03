@@ -3,7 +3,7 @@ import { getSetting } from "@slop-bucket/core";
 import { env } from "cloudflare:workers";
 import Public from "../layouts/Public.astro";
 
-const w = await getSetting(env.DB, "trending_weights");
+const [w, minStars] = await Promise.all([getSetting(env.DB, "trending_weights"), getSetting(env.DB, "github_min_stars")]);
 
 const h2 = "text-xl font-bold tracking-tight";
 const p = "mt-3 text-stone-600 dark:text-stone-300";
@@ -27,6 +27,7 @@ const p = "mt-3 text-stone-600 dark:text-stone-300";
     </ul>
     <p class={p}>
       The total is divided by how long ago the latest post was, so a tool fades unless people keep talking about it. Closed-source tools have no stars, so they rank on posts alone.
+      {w.low_star < 1 && <> A tool whose GitHub repo has fewer than {minStars} stars has its score multiplied by {w.low_star}.</>}
     </p>
     <p class="mt-3 font-mono text-xs text-stone-500 dark:text-stone-400">
       score = ({w.w_s} × sources + {w.w_e} × ln(1 + upvotes + 2 × comments) + {w.w_g} × ln(1 + stars gained)) / (hours since last post + 2)^{w.g}

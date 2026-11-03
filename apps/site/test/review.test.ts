@@ -22,7 +22,7 @@ import {
 const db = env.DB;
 
 beforeEach(async () => {
-  await db.batch(["review_decisions", "post_snapshots", "tool_aliases", "posts", "tools"].map((t) => db.prepare(`DELETE FROM ${t}`)));
+  await db.batch(["review_decisions", "post_snapshots", "repo_snapshots", "tool_aliases", "posts", "tools"].map((t) => db.prepare(`DELETE FROM ${t}`)));
 });
 
 const classification = (over: Record<string, unknown> = {}) => ({
@@ -92,8 +92,9 @@ describe("queue filters", () => {
   }
 
   it("parses the URL, drops unknown values and writes back only non-defaults", () => {
-    expect(filters("source=github&band=mid&order=lowest")).toEqual({ source: "github", band: "mid", order: "lowest" });
-    expect(filters("source=reddit&band=x&order=random")).toEqual({ source: "", band: "", order: "oldest" });
+    expect(filters("source=github&band=mid&stars=hide&order=lowest")).toEqual({ source: "github", band: "mid", stars: "hide", order: "lowest" });
+    expect(filters("source=reddit&band=x&stars=lots&order=random")).toEqual({ source: "", band: "", stars: "", order: "oldest" });
+    expect(queueFilterQuery(filters("stars=only"))).toBe("stars=only");
     expect(queueFilterQuery(filters("source=&band=&order=oldest"))).toBe("");
     expect(queueFilterQuery(filters("order=newest&source=hn"))).toBe("source=hn&order=newest");
     expect(withFilters("/admin/queue?after=3", filters("band=high"))).toBe("/admin/queue?after=3&band=high");
@@ -139,6 +140,28 @@ describe("queue filters", () => {
     await rejectPost(db, a, false);
     expect(await nextQueuedId(db, a, filters("source=hn&order=lowest"))).toBe(c);
     expect(await nextQueuedId(db, 0, filters("source=producthunt"))).toBeNull();
+  });
+
+  it("hides or keeps only posts whose tool's repo is under the star floor, with stars on the list and summary", async () => {
+    await db.prepare("UPDATE settings SET value = '10' WHERE key = 'github_min_stars'").run();
+    const withRepo = async (name: string, repo: string, stars: number | null) => {
+      const id = await tool(name);
+      await db.prepare("UPDATE tools SET github_repo = ? WHERE id = ?").bind(repo, id).run();
+      if (stars !== null) await db.prepare("INSERT INTO repo_snapshots (tool_id, date, stars) VALUES (?, '2026-10-01', 100), (?, '2026-10-02', ?)").bind(id, id, stars).run();
+      return id;
+    };
+    const tiny = await post(await withRepo("Tiny", "acme/tiny", 3)); // latest snapshot counts, not the older 100
+    const big = await post(await withRepo("Big", "acme/big", 10)); // at the floor is not under it
+    const unchecked = await post(await withRepo("Unchecked", "acme/unchecked", null)); // no snapshot counts as under
+    const noRepo = await post(await tool("NoRepo"));
+    const orphan = await post(null, null);
+    expect((await listQueue(db, filters("stars=hide"))).map((q) => q.id)).toEqual([big, noRepo, orphan]);
+    expect((await listQueue(db, filters("stars=only"))).map((q) => q.id)).toEqual([tiny, unchecked]);
+    expect(await queueCounts(db, filters("stars=hide"))).toEqual({ total: 5, matching: 3 });
+    expect(await nextQueuedId(db, big, filters("stars=hide"))).toBe(noRepo);
+    expect((await listQueue(db, filters(""))).map((q) => [q.stars, q.low_stars])).toEqual([[3, 1], [10, 0], [null, 1], [null, 0], [null, 0]]);
+    expect((await getQueueItem(db, tiny))?.tool).toMatchObject({ github_repo: "acme/tiny", stars: 3, low_stars: 1 });
+    expect((await getQueueItem(db, noRepo))?.tool).toMatchObject({ github_repo: null, stars: null, low_stars: 0 });
   });
 
   it("names each post's tool and marks new tools", async () => {

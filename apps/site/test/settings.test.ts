@@ -23,8 +23,8 @@ describe("saveSetting", () => {
     await saveSetting(db, "github_topics", form({ value: " mcp\nclaude-code \n\n ai-agents" }));
     expect(await getSetting(db, "github_topics")).toEqual(["mcp", "claude-code", "ai-agents"]);
 
-    await saveSetting(db, "trending_weights", form({ w_s: "2", w_e: "1", w_g: "0.5", g: "1.8" }));
-    expect(await getSetting(db, "trending_weights")).toEqual({ w_s: 2, w_e: 1, w_g: 0.5, g: 1.8 });
+    await saveSetting(db, "trending_weights", form({ w_s: "2", w_e: "1", w_g: "0.5", g: "1.8", low_star: "0.25" }));
+    expect(await getSetting(db, "trending_weights")).toEqual({ w_s: 2, w_e: 1, w_g: 0.5, g: 1.8, low_star: 0.25 });
 
     await saveSetting(db, "model_reasoning_effort", form({ value: "" }));
     expect(await getSetting(db, "model_reasoning_effort")).toBe("");
@@ -40,7 +40,9 @@ describe("saveSetting", () => {
     ["tags", { value: "# Works with\nclaude-code: Claude Code" }], // likewise
     ["model_id", { value: "" }],
     ["model_reasoning_effort", { value: "extreme" }],
-    ["trending_weights", { w_s: "1", w_e: "1", w_g: "", g: "1" }],
+    ["trending_weights", { w_s: "1", w_e: "1", w_g: "", g: "1", low_star: "0.5" }],
+    ["trending_weights", { w_s: "1", w_e: "1", w_g: "1", g: "1", low_star: "2" }],
+    ["trending_weights", { w_s: "1", w_e: "1", w_g: "1", g: "1" }], // low_star missing
     ["no_such_setting", { value: "1" }],
   ])("rejects %s = %j", async (key, entries) => {
     const before = await loadSettings(db);

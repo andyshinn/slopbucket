@@ -1,6 +1,8 @@
 import {
   getSetting,
   hostOf,
+  latestStarsSql,
+  lowStarToolSql,
   isGenericHost,
   normalizeGithubRepo,
   normalizeHomepage,
@@ -105,6 +107,10 @@ export interface ToolDetail {
   tags: string[];
   homepage_url: string | null;
   github_repo: string | null;
+  /** Stars in the latest repo snapshot; null without one. */
+  stars: number | null;
+  /** Repo under github_min_stars, or not snapshotted yet (lowStarToolSql). */
+  low_stars: 0 | 1;
   is_open_source: number | null;
   status: ToolStatus;
   first_seen_at: string;
@@ -121,7 +127,12 @@ export const POSTS_ALL = 500;
 
 export async function getTool(db: D1Database, id: number, postLimit = POSTS_DEFAULT): Promise<ToolDetail | null> {
   const [tool, aliases, posts, count] = await db.batch([
-    db.prepare("SELECT id, slug, name, description, category, tags, homepage_url, github_repo, is_open_source, status, first_seen_at, last_post_at FROM tools WHERE id = ?").bind(id),
+    db
+      .prepare(
+        `SELECT t.id, t.slug, t.name, t.description, t.category, t.tags, t.homepage_url, t.github_repo, ${latestStarsSql("t")} AS stars,
+           coalesce(${lowStarToolSql("t")}, 0) AS low_stars, t.is_open_source, t.status, t.first_seen_at, t.last_post_at FROM tools t WHERE t.id = ?`,
+      )
+      .bind(id),
     db
       .prepare(
         `SELECT a.kind, a.value, EXISTS (

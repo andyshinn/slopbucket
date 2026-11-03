@@ -2,7 +2,7 @@
 
 Where Slop Bucket stands, so a new session can pick up without the chat history. Update this file in each PR that moves the launch plan, changes what's next, or resolves an open issue.
 
-**Last updated:** 2026-10-31 (Tags & categories admin page: tags view; the tag text editor left Settings)
+**Last updated:** 2026-11-02 (low-star tools: star counts in the queue and on the admin tool page, a queue star filter, and a trending penalty)
 
 ## Resuming in a new session
 
@@ -39,6 +39,8 @@ Built outside the plan's step list, all needed before launch: the daily trending
 
 ## Open issues
 
+- **Low-star tools in the queue** (andyshinn/slopbucket, this PR): the queue's "GitHub stars" filter hides (or shows only) posts whose tool's repo is under `github_min_stars`; the queue item, the desktop list and the admin tool page show stars. The trending job multiplies those tools' scores by `trending_weights.low_star` (0.5, migration 0012; tune on Settings → Trending weights, 1 turns it off). Scores change at the next daily update, or Status → Trending → Run. **Question for Andy:** should approving a low-star tool lift the penalty? Today it doesn't.
+
 - **About 900 published tools are Show HN repos under 10 stars** (fixed for new posts in andyshinn/slopbucket#36): `github_min_stars` only filtered the GitHub search, so HN and lobste.rs posts linking tiny repos auto-published. New posts like that now go to review. After the deploy, press Status → Jobs → Send low-star tools to review (or `ops.yml` → `queue-low-stars`) once to move the existing ones back to the queue.
 
 - **Daily update failed with `NOT NULL constraint failed: tools.trending_score`** (fixed in andyshinn/slopbucket#32): a flagged lobste.rs story with a negative score made `ln(1 + P + 2C)` NaN, D1 bound it as NULL, and the whole batch failed, so no tool was scored. After the deploy, press Run on Status → Daily update and check it scores tools.
@@ -53,7 +55,7 @@ Built outside the plan's step list, all needed before launch: the daily trending
 - **Site:** https://slopbucket.app. Admin at `/admin`, behind Cloudflare Access.
 - **Resources:** Workers `sb-ingest` and `sb-site`; D1 `sb`; R2 `sb-articles`; queues `sb-fetch` and `sb-classify`; AI Gateway `sb` (its daily cap, $15 in `infra/ai-gateway.json`, counts GLM spend, confirmed in Analytics; `deploy.yml` reapplies the file on every deploy, so change the cap there, not in the dashboard).
 - **Crons (UTC):** 06:00 fetches all sources; 07:00 runs the trending job (engagement, GitHub stars, scores).
-- **Migrations applied:** 0001–0010 (0011, `category_info`, applies on the next deploy).
+- **Migrations applied:** 0001–0010 (0011, `category_info`, and 0012, `trending_weights.low_star`, apply on the next deploy).
 - **Data:** 511 queued posts, 2,421 dropped, 2 published, 1 rejected; 461 tools.
 - **Classifier:** GLM 5.3 Flash (`@cf/zai-org/glm-5.3-flash`), reasoning `low`, two posts at a time (about 10–15 a minute). Eval: 82% precision, 94% recall on the 150 labeled posts. About $0.0004 a post.
 - **Categories (v3):** agent, agent-addon, agent-tools, agent-security, review-testing, memory-context, ide, cli, mcp-dev, mcp-general, other. "other" fell from 51% to about 1.4% of the queue.
